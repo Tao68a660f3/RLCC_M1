@@ -79,8 +79,8 @@ void Error_Handler(void);
 #define LED_LAT_GPIO_Port GPIOB
 #define LED_EN_Pin GPIO_PIN_2
 #define LED_EN_GPIO_Port GPIOB
-#define SPI2_CS_Pin GPIO_PIN_12
-#define SPI2_CS_GPIO_Port GPIOB
+#define SD_CS_Pin GPIO_PIN_12
+#define SD_CS_GPIO_Port GPIOB
 #define LED_LA_Pin GPIO_PIN_8
 #define LED_LA_GPIO_Port GPIOA
 #define LED_LB_Pin GPIO_PIN_11
@@ -92,8 +92,8 @@ void Error_Handler(void);
 #define IR_Pin GPIO_PIN_8
 #define IR_GPIO_Port GPIOB
 #define IR_EXTI_IRQn EXTI9_5_IRQn
-#define SPI1_CS_Pin GPIO_PIN_9
-#define SPI1_CS_GPIO_Port GPIOB
+#define W25QXX_CS_Pin GPIO_PIN_9
+#define W25QXX_CS_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
