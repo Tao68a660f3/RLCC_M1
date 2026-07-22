@@ -52,6 +52,21 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
 )
 
+# 1. 自动搜寻指定目录下的所有源文件
+file(GLOB_RECURSE USER_SOURCES 
+    "Drivers/Board/*.c"
+)
+
+# 2. 将搜寻到的源文件添加到目标
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE
+    ${USER_SOURCES}
+)
+
+# 3. 包含路径（这个还是得写文件夹名，但一行一个文件夹即可）
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+    Drivers/Board/
+)
+
 # Add project symbols (macros)
 target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined symbols
