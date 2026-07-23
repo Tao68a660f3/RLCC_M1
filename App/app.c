@@ -1,7 +1,10 @@
 #include "i2c.h"
 #include "main.h"
+#include "rtc.h"
+
 
 #include "aht30.h"
+#include "bsp_rtc.h"
 #include "event_manager.h"
 #include "ir_remote.h"
 #include "w25q64.h"
@@ -12,8 +15,10 @@
 
 uint32_t ui_timer = 0;
 AHT30_HandleTypeDef aht30;
+RTC_DateTimeTypeDef current_dt;
 
 void App_Init() {
+  RTC_App_Init(&hrtc);
   // W25Q64_Init(&hspi1);
   AHT30_Init(&aht30);
 }
@@ -34,15 +39,22 @@ void App_Loop() {
   if (HAL_GetTick() - ui_timer >= 3000) {
     ui_timer = HAL_GetTick();
 
-    float cur_temp, cur_hum;
+    // 获取最新时间
+    RTC_GetDateTime(&hrtc, &current_dt);
 
-    // 只需要管拿数据，拿之前驱动会自动校验 is_valid
-    if (AHT30_Get_SafeData(&aht30, &cur_temp, &cur_hum)) {
-      // 正常拿到数据，刷新 UI 界面
-      printf("Temp: %.1f C, Hum: %.1f %%\r\n", cur_temp, cur_hum);
+    // 获取最新温湿度
+    float temp = 0.0f, hum = 0.0f;
+    uint8_t aht_ok = AHT30_Get_SafeData(&aht30, &temp, &hum);
+
+    // 格式化输出/刷屏
+    printf("[%04d-%02d-%02d %02d:%02d:%02d] ", current_dt.year,
+           current_dt.month, current_dt.day, current_dt.hours,
+           current_dt.minutes, current_dt.seconds);
+
+    if (aht_ok) {
+      printf("Temp: %.1f C | Hum: %.1f %%\r\n", temp, hum);
     } else {
-      // 传感器掉线或发生问题，屏幕画警告图标或者显示 "--.-"
-      printf("Error: AHT30 Offline / Data Invalid!\r\n");
+      printf("Temp: --.- C | Hum: --.- %%\r\n");
     }
   }
 }
