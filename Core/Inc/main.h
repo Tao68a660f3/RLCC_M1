@@ -89,9 +89,9 @@ void Error_Handler(void);
 #define LED_LC_GPIO_Port GPIOA
 #define LED_LD_Pin GPIO_PIN_15
 #define LED_LD_GPIO_Port GPIOA
-#define IR_Pin GPIO_PIN_8
-#define IR_GPIO_Port GPIOB
-#define IR_EXTI_IRQn EXTI9_5_IRQn
+#define IR_IN_Pin GPIO_PIN_8
+#define IR_IN_GPIO_Port GPIOB
+#define IR_IN_EXTI_IRQn EXTI9_5_IRQn
 #define W25QXX_CS_Pin GPIO_PIN_9
 #define W25QXX_CS_GPIO_Port GPIOB
 

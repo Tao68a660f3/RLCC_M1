@@ -27,9 +27,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "aht30.h"
+#include "app.h"
+#include "ir_remote.h"
 #include "stdio.h"
-#include "w25q64.h"
+#include "system_utils.h"
+
 
 /* USER CODE END Includes */
 
@@ -103,35 +105,16 @@ int main(void) {
   MX_TIM1_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-
-  // W25Q64_Init(&hspi1);
-  AHT30_HandleTypeDef aht30;
-  AHT30_Init(&aht30);
-  uint32_t ui_timer = 0;
+  DWT_Init();
+  App_Init();
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1) {
-    /* 1. 后台静默运行（微秒级，只管在后台采数据和监控健康度） */
-    AHT30_Process_Background(&hi2c1, &aht30);
+    App_Loop();
 
-    /* 2. 前台业务：比如屏幕每 500ms 刷一次，或者串口/网络上报 */
-    if (HAL_GetTick() - ui_timer >= 3000) {
-      ui_timer = HAL_GetTick();
-
-      float cur_temp, cur_hum;
-
-      // 只需要管拿数据，拿之前驱动会自动校验 is_valid
-      if (AHT30_Get_SafeData(&aht30, &cur_temp, &cur_hum)) {
-        // 正常拿到数据，刷新 UI 界面
-        printf("Temp: %.1f C, Hum: %.1f %%\r\n", cur_temp, cur_hum);
-      } else {
-        // 传感器掉线或发生问题，屏幕画警告图标或者显示 "--.-"
-        printf("Error: AHT30 Offline / Data Invalid!\r\n");
-      }
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -183,6 +166,10 @@ void SystemClock_Config(void) {
 }
 
 /* USER CODE BEGIN 4 */
+
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+  IR_Process_Callback(GPIO_Pin); // 处理红外
+}
 
 int __io_putchar(int ch) {
   HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
