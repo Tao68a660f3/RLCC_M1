@@ -2,7 +2,7 @@
 #include "main.h"
 #include <string.h>
 
-#define FLUSH_DIV 1
+#define FLUSH_DIV 2
 
 volatile uint8_t need_commit = 1;
 volatile uint8_t flush_counter = 0;

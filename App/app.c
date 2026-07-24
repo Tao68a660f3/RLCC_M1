@@ -10,7 +10,7 @@
 #include "aht30.h"
 #include "bsp_rtc.h"
 #include "event_manager.h"
-#include "flash_font.h"
+#include "font_config.h"
 #include "ir_remote.h"
 #include "led_display.h"
 #include "led_driver.h"
@@ -21,10 +21,6 @@
 
 #include "app.h"
 
-/* Flash 字库地址（来自 font_offsets.txt） */
-#define TEST_ASC_ADDR 0x010000 /* ASC2410 */
-#define TEST_GBK_ADDR 0x378000 /* GBK2432S */
-
 uint32_t ui_timer = 0;
 AHT30_HandleTypeDef aht30;
 RTC_DateTimeTypeDef current_dt;
@@ -33,36 +29,41 @@ extern uint8_t need_commit;
 
 static void IR_Control();
 
-static uint8_t surpriseMsg[] = {0xBB, 0xB6, 0xD3, 0xAD, 0xCA, 0xB9, 0xD3, 0xC3,
-                                0xCB, 0xAB, 0xC9, 0xAB, 0xB8, 0xE8, 0xB4, 0xCA,
-                                0xCF, 0xD4, 0xCA, 0xBE, 0xC6, 0xF7, 0xA3, 0xA1,
-                                0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D, 0x65, 0x20,
-                                0x74, 0x6F, 0x20, 0x75, 0x73, 0x65, 0x21, 0x00};
+static char surpriseMsg[] = {0xBB, 0xB6, 0xD3, 0xAD, 0xCA, 0xB9, 0xD3, 0xC3,
+                             0xCB, 0xAB, 0xC9, 0xAB, 0xB8, 0xE8, 0xB4, 0xCA,
+                             0xCF, 0xD4, 0xCA, 0xBE, 0xC6, 0xF7, 0xA3, 0xA1,
+                             0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D, 0x65, 0x20,
+                             0x74, 0x6F, 0x20, 0x75, 0x73, 0x65, 0x21, 0x00};
 
 void App_Init() {
   RTC_App_Init(&hrtc);
   AHT30_Init(&aht30);
 
   W25Q64_Init(&hspi1);
-  Font_Flash_Init();
+  Font_Config_Init();
 
-  /* 注册并选中 ASC1608 和 GBK1616H */
-  int asc_id = FlashASC_Register(TEST_ASC_ADDR);
-  int gbk_id = FlashGBK_Register(TEST_GBK_ADDR, 24, 32, 96);
-  if (asc_id >= 0)
-    FlashASC_Select(asc_id);
-  if (gbk_id >= 0)
-    FlashGBK_Select(gbk_id);
+  /* 选择 ASC2410 和 GBK2432S */
+  Font_Select_ASC(FONT_ASC_1608);
+  Font_Select_GBK(FONT_GBK_1616S);
 
   LED_Init(&htim1);
   WindowManager_Init();
 
-  /* 窗口0：全屏画布，显示测试文本 */
-  Window_Config(0, 0, 0, 192, 32);
+  /* 窗口0：显示测试文本 */
+  Window_Config(0, 0, 0, 192, 16);
   Window_FillText(0, surpriseMsg, C_RED, CANVAS_R, VALIGN_MIDDLE);
   Window_SetAlignment(0, ALIGN_LEFT);
   window_list[0].scroll_divider = 1;
   window_list[0].scroll_step = -1;
+
+  Font_Select_ASC(FONT_ASC_1616);
+  Font_Select_GBK(FONT_GBK_1616H);
+
+  Window_Config(1, 0, 16, 192, 16);
+  Window_FillText(1, surpriseMsg, C_GREEN, CANVAS_G, VALIGN_MIDDLE);
+  Window_SetAlignment(1, ALIGN_LEFT);
+  window_list[1].scroll_divider = 2;
+  window_list[1].scroll_step = -1;
 }
 
 void App_Loop() {

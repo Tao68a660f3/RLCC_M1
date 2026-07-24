@@ -145,19 +145,21 @@ static uint8_t _fallback_5x8(uint32_t code, GlyphInfo *out_glyph,
 static uint8_t _asc_decode_pixel(const uint8_t *raw, uint8_t max_w, uint8_t h,
                                  uint8_t is_vert, uint8_t is_lsb, uint16_t x,
                                  uint16_t y) {
-  uint8_t stride = is_vert ? ((h + 7) / 8) : ((max_w + 7) / 8);
-
-  /* Python 映射逻辑：
-   *   main_limit = max_w if vert else h
-   *   sub_limit  = h     if vert else max_w
-   *   for m in main_limit, s in sub_limit:
-   *     res_x = m if vert else s
-   *     res_y = s if vert else m
-   *
-   * 逆映射：已知 (res_x, res_y) = (x, y) 求 (m, s)
+  /* 原始点阵的有效范围：
+   *   水平扫描: x ∈ [0, max_w), y ∈ [0, h)
+   *   垂直扫描: x ∈ [0, max_w), y ∈ [0, h)
+   * 超出此范围的像素（例如 ext_w 添加的额外列）不存在于原始数据中，返回 0
    */
+  uint8_t main_limit = is_vert ? max_w : h;
+  uint8_t sub_limit = is_vert ? h : max_w;
+
   uint8_t m = is_vert ? (uint8_t)x : (uint8_t)y;
   uint8_t s = is_vert ? (uint8_t)y : (uint8_t)x;
+
+  if (m >= main_limit || s >= sub_limit)
+    return 0;
+
+  uint8_t stride = is_vert ? ((h + 7) / 8) : ((max_w + 7) / 8);
 
   uint16_t byte_pos = (uint16_t)m * stride + (s / 8);
   uint8_t bit_pos = is_lsb ? (s % 8) : (7 - (s % 8));
