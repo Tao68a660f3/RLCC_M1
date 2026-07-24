@@ -1,9 +1,78 @@
 #include "window_manager.h"
+#include "flash_font.h"
 #include "mem_pool.h"
 #include <stdint.h>
 #include <string.h>
 
 extern volatile uint8_t need_commit;
+
+// ============================================================================
+// 辅助函数：字符串遍历测量与绘制 (使用 Flash 字库适配器)
+// ============================================================================
+
+/**
+ * @brief 测量一段字符串在画布上所需的像素尺寸
+ * @param str   待测量的字符串 (UTF-8? 实际上为单字节 ASC + 双字节 GBK 混合)
+ * @return Size2D 尺寸
+ *
+ * 使用 Font_Flash_ASC_Adapter / Font_Flash_GBK_Adapter 进行测量 (render_now=0)
+ * 跳过 \r\n 换行符
+ */
+static Size2D _Window_MeasureText(const char *str) {
+  DrawContext ctx = {0};
+  Size2D size = {0};
+  const char *p = str;
+  while (*p) {
+    if (*p == '\n' || *p == '\r') {
+      if (*p == '\r' && *(p + 1) == '\n')
+        p++;
+      p++;
+      continue;
+    }
+    GlyphInfo g;
+    if ((uint8_t)*p < 0x80) {
+      if (Font_Flash_ASC_Adapter((uint8_t)*p, &g, 0))
+        Canvas_MeasureStep(&ctx, &g, &size);
+      p++;
+    } else {
+      uint16_t gbk = ((uint16_t)(uint8_t)*p << 8) | (uint8_t)*(p + 1);
+      if (Font_Flash_GBK_Adapter(gbk, &g, 0))
+        Canvas_MeasureStep(&ctx, &g, &size);
+      p += 2;
+    }
+  }
+  return size;
+}
+
+/**
+ * @brief 在已分配的 Canvas 上绘制字符串
+ * @param ctx   绘图上下文 (需初始化 target, cur_x, cur_y 等)
+ * @param str   待绘制字符串
+ * @param color 颜色
+ */
+static void _Window_RenderText(DrawContext *ctx, const char *str,
+                               CanvasColor color) {
+  const char *p = str;
+  while (*p) {
+    if (*p == '\n' || *p == '\r') {
+      if (*p == '\r' && *(p + 1) == '\n')
+        p++;
+      p++;
+      continue;
+    }
+    GlyphInfo g;
+    if ((uint8_t)*p < 0x80) {
+      if (Font_Flash_ASC_Adapter((uint8_t)*p, &g, 1))
+        Canvas_DrawBitmap(ctx, &g, color);
+      p++;
+    } else {
+      uint16_t gbk = ((uint16_t)(uint8_t)*p << 8) | (uint8_t)*(p + 1);
+      if (Font_Flash_GBK_Adapter(gbk, &g, 1))
+        Canvas_DrawBitmap(ctx, &g, color);
+      p += 2;
+    }
+  }
+}
 
 // 1. 窗口实例表（静态分配）
 LED_Window window_list[MAX_WINDOWS];
@@ -52,6 +121,47 @@ void Window_SetAlignment(uint8_t idx, WinAlign align) {
   case ALIGN_RIGHT:
     win->x_offset = win->w - content_w;
     break;
+  }
+}
+
+// ============================================================================
+// 窗口填充文本（Flash 字库适配器版）
+// ============================================================================
+
+/**
+ * @brief 使用 Flash 字库适配器填充文本到指定窗口的画布
+ * @param win_idx 窗口索引
+ * @param str     待渲染的字符串 (混合 ASC + GBK)
+ * @param color   前景色
+ * @param mode    画布内存模式 (CANVAS_R / CANVAS_RG / CANVAS_Y / CANVAS_G)
+ *
+ * 流程：测量字符串尺寸 → Pool_AllocCanvas (带复用) → 绘制 → 原子切换窗口引用
+ */
+void Window_FillText(uint8_t win_idx, const char *str, CanvasColor color,
+                     CanvasMode mode) {
+  if (win_idx >= MAX_WINDOWS || str == NULL)
+    return;
+
+  // --- 1. 测量阶段 ---
+  Size2D size = _Window_MeasureText(str);
+
+  // --- 2. 分配阶段（带原位复用检测） ---
+  int16_t old_h = window_list[win_idx].canvas.handle;
+  CanvasHandle new_canvas = Pool_AllocCanvas(size.w, size.h, old_h, mode);
+
+  if (new_canvas.handle != -1) {
+    // --- 3. 绘制阶段 ---
+    DrawContext ctx = {0};
+    ctx.target = &new_canvas;
+    ctx.cur_x = 0;
+    ctx.cur_y = 0;
+    _Window_RenderText(&ctx, str, color);
+
+    // --- 4. 原子切换 ---
+    if (new_canvas.handle != old_h && old_h != -1) {
+      Pool_FreeCanvas(old_h);
+    }
+    window_list[win_idx].canvas = new_canvas;
   }
 }
 

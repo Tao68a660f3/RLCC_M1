@@ -5,7 +5,7 @@
 #include "led_driver.h"
 #include <stdint.h>
 
-#define MAX_WINDOWS 8
+#define MAX_WINDOWS 16
 
 typedef struct {
   // 物理属性 (屏幕坐标系)
@@ -28,6 +28,8 @@ typedef struct {
   uint8_t is_active;
 } LED_Window;
 
+typedef enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT } WinAlign;
+
 extern LED_Window window_list[MAX_WINDOWS];
 
 /* 窗口管理 API */
@@ -37,7 +39,6 @@ void WindowManager_Init(void);
 void Window_Config(uint8_t idx, int16_t x, int16_t y, uint16_t w, uint16_t h);
 
 // 设置对齐方式 (内部自动计算 x_offset)
-typedef enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT } WinAlign;
 void Window_SetAlignment(uint8_t idx, WinAlign align);
 
 // 核心渲染与逻辑更新 (在 while 循环调用)
@@ -50,5 +51,10 @@ void WindowManager_Process(void);
 // 0）
 void Window_BlitToScreen(LED_Window *win, uint16_t h_px, uint8_t color_high,
                          uint8_t color_base, int16_t off_x, int16_t off_y);
+
+// 填充文本到窗口画布（Flash 字库适配器版）
+// 参数含义同 UI_UpdateTextEx，流程：测量→分配→绘制→原子切换
+void Window_FillText(uint8_t win_idx, const char *str, CanvasColor color,
+                     CanvasMode mode);
 
 #endif

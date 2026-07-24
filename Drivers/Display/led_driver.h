@@ -4,7 +4,7 @@
 #include "main.h"
 
 // 屏幕规格 (64 行: 两个 32 行 HUB08 级联)
-#define WIDTH 128
+#define WIDTH 192
 #define HEIGHT 64
 #define SCAN_ROWS 16
 #define DRIVER_WIDTH (WIDTH + 1) // Hardware Abstraction Layer (HAL) Offset
