@@ -6,14 +6,17 @@
 #include "rtc.h"
 #include "spi.h"
 #include "tim.h"
+#include "usart.h"
 
 #include "aht30.h"
 #include "bsp_rtc.h"
+#include "com_manager.h"
 #include "event_manager.h"
 #include "font_config.h"
 #include "ir_remote.h"
 #include "led_display.h"
 #include "led_driver.h"
+#include "ui_manager.h"
 #include "w25q64.h"
 #include "window_manager.h"
 
@@ -39,30 +42,45 @@ static char Msg_02[] = {0xBB, 0xB6, 0xD3, 0xAD, 0xCA, 0xB9, 0xD3, 0xC3, 0xCB,
                         0xCA, 0xBE, 0xC6, 0xF7, 0xA3, 0xA1, 0x00};
 
 void App_Init() {
+  COM_Init(&huart1);
+
   RTC_App_Init(&hrtc);
   AHT30_Init(&aht30);
 
   W25Q64_Init(&hspi1);
   Font_Config_Init();
 
-  Font_Select_ASC(FONT_ASC_2412);
-  Font_Select_GBK(FONT_GBK_2432H);
+  Font_Select_ASC(FONT_ASC_1608);
+  Font_Select_GBK(FONT_GBK_1616S);
 
   LED_Init(&htim1);
   WindowManager_Init();
 
-  /* 窗口0：显示测试文本 */
-  Window_Config(0, 0, 0, 192, 32);
-  Window_FillText(0, Msg_02, C_RED, CANVAS_R, VALIGN_MIDDLE);
+  /* 窗口：显示测试文本 */
+  Window_Config(0, 0, 0, 192, 16);
+  Window_FillText(0, Msg_01, C_RED, CANVAS_R, VALIGN_MIDDLE);
   Window_SetAlignment(0, ALIGN_LEFT);
-  window_list[0].scroll_divider = 4;
+  window_list[0].scroll_divider = 1;
   window_list[0].scroll_step = -1;
+
+  Window_Config(1, 0, 16, 192, 16);
+  Window_FillText(1, Msg_02, C_GREEN, CANVAS_G, VALIGN_MIDDLE);
+  Window_SetAlignment(1, ALIGN_LEFT);
+  window_list[1].scroll_divider = 1;
+  window_list[1].scroll_step = -1;
 }
 
 void App_Loop() {
   /* 1. 后台静默运行（微秒级，只管在后台采数据和监控健康度） */
   IR_Control();
   AHT30_Process_Background(&hi2c1, &aht30);
+
+  /* 1b. 串口数据消费（根据系统模式选择文本/协议模式） */
+  if (g_curr_sys_mode == SYS_MODE_PROTOCOL_MODE) {
+    COM_Process_ProtocolMode();
+  } else if (g_curr_sys_mode == SYS_MODE_TXT_MODE) {
+    COM_Process_TextMode();
+  }
 
   WindowManager_Process();
 
