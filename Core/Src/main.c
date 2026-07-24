@@ -26,7 +26,6 @@
 #include "tim.h"
 #include "usart.h"
 
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app.h"
@@ -106,6 +105,8 @@ int main(void) {
   MX_SPI2_Init();
   MX_RTC_Init();
   /* USER CODE BEGIN 2 */
+  // HAL_TIM_Base_Start_IT(&htim2);
+
   printf("SYSTEM STARTING...\r\n");
   DWT_Init();
   App_Init();

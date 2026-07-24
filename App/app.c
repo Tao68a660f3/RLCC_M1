@@ -1,13 +1,16 @@
 #include "i2c.h"
 #include "main.h"
 #include "rtc.h"
-
+#include "tim.h"
 
 #include "aht30.h"
 #include "bsp_rtc.h"
 #include "event_manager.h"
 #include "ir_remote.h"
+#include "led_display.h"
+#include "led_driver.h"
 #include "w25q64.h"
+#include "window_manager.h"
 
 #include <stdio.h>
 
@@ -17,17 +20,18 @@ uint32_t ui_timer = 0;
 AHT30_HandleTypeDef aht30;
 RTC_DateTimeTypeDef current_dt;
 
+static void IR_Control();
+
 void App_Init() {
   RTC_App_Init(&hrtc);
   // W25Q64_Init(&hspi1);
   AHT30_Init(&aht30);
-}
 
-static void IR_Control() {
-  if (My_IR.ready) {
-    Event_Dispatch_IR(My_IR.cmd); // 交给管家处理
-    My_IR.ready = 0;
-  }
+  LED_Init(&htim1);
+  //   WindowManager_Init();
+
+  Display_ShowString(0, 0, "HELLO", COLOR_RED);
+  //   LED_Commit();
 }
 
 void App_Loop() {
@@ -56,5 +60,12 @@ void App_Loop() {
     } else {
       printf("Temp: --.- C | Hum: --.- %%\r\n");
     }
+  }
+}
+
+static void IR_Control() {
+  if (My_IR.ready) {
+    Event_Dispatch_IR(My_IR.cmd); // 交给管家处理
+    My_IR.ready = 0;
   }
 }
