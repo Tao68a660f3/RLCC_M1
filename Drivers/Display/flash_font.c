@@ -15,8 +15,8 @@
 
 /* --- 常量定义 ----------------------------------------------------------------
  */
-#define MAX_ASC_SLOTS 8    /* 最多注册 8 个 ASCII 字库 */
-#define MAX_GBK_SLOTS 8    /* 最多注册 8 个 GBK 字库   */
+#define MAX_ASC_SLOTS 10   /* 最多注册 8 个 ASCII 字库 */
+#define MAX_GBK_SLOTS 10   /* 最多注册 8 个 GBK 字库   */
 #define GLYPH_BUF_SIZE 256 /* 输出点阵缓冲区（32x32 最大） */
 
 /* --- Flash 字库头部偏移 ------------------------------------------------------
