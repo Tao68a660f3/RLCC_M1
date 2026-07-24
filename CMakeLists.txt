@@ -56,6 +56,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 file(GLOB_RECURSE USER_SOURCES 
     "Drivers/BSP/*.c"
     "Drivers/Board/*.c"
+    "Drivers/Display/*.c"
     "App/*.c"
 )
 
@@ -68,6 +69,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/BSP/MAIN/
     Drivers/Board/
+    Drivers/Display/
     App/
 )
 
