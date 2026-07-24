@@ -45,13 +45,35 @@ static Size2D _Window_MeasureText(const char *str) {
 }
 
 /**
- * @brief 在已分配的 Canvas 上绘制字符串
- * @param ctx   绘图上下文 (需初始化 target, cur_x, cur_y 等)
- * @param str   待绘制字符串
- * @param color 颜色
+ * @brief 在已分配的 Canvas 上绘制字符串（支持行内竖直对齐）
+ * @param ctx    绘图上下文 (需初始化 target, cur_x, cur_y 等)
+ * @param str    待绘制字符串
+ * @param color  颜色
+ * @param valign 行内竖直对齐方式
+ * @param row_h  当前行总高度 (px)
+ *
+ * 每个字符绘制前计算 y_offset = (row_h - glyph->height) * factor，
+ * 临时偏移 ctx->cur_y 绘制后恢复，实现不同高度字符行内对齐。
  */
 static void _Window_RenderText(DrawContext *ctx, const char *str,
-                               CanvasColor color) {
+                               CanvasColor color, Valign valign,
+                               uint16_t row_h) {
+  /* y_factor: 0=顶部, 128=居中, 255=底部，避免浮点运算 */
+  uint8_t y_factor;
+  switch (valign) {
+  case VALIGN_TOP:
+    y_factor = 0;
+    break;
+  case VALIGN_MIDDLE:
+    y_factor = 128;
+    break;
+  case VALIGN_BOTTOM:
+    y_factor = 255;
+    break;
+  default:
+    y_factor = 0;
+    break;
+  }
   const char *p = str;
   while (*p) {
     if (*p == '\n' || *p == '\r') {
@@ -62,13 +84,27 @@ static void _Window_RenderText(DrawContext *ctx, const char *str,
     }
     GlyphInfo g;
     if ((uint8_t)*p < 0x80) {
-      if (Font_Flash_ASC_Adapter((uint8_t)*p, &g, 1))
+      if (Font_Flash_ASC_Adapter((uint8_t)*p, &g, 1)) {
+        uint16_t y_off =
+            (row_h > g.height)
+                ? (uint16_t)((uint32_t)(row_h - g.height) * y_factor / 255)
+                : 0;
+        ctx->cur_y += y_off;
         Canvas_DrawBitmap(ctx, &g, color);
+        ctx->cur_y -= y_off;
+      }
       p++;
     } else {
       uint16_t gbk = ((uint16_t)(uint8_t)*p << 8) | (uint8_t)*(p + 1);
-      if (Font_Flash_GBK_Adapter(gbk, &g, 1))
+      if (Font_Flash_GBK_Adapter(gbk, &g, 1)) {
+        uint16_t y_off =
+            (row_h > g.height)
+                ? (uint16_t)((uint32_t)(row_h - g.height) * y_factor / 255)
+                : 0;
+        ctx->cur_y += y_off;
         Canvas_DrawBitmap(ctx, &g, color);
+        ctx->cur_y -= y_off;
+      }
       p += 2;
     }
   }
@@ -134,19 +170,23 @@ void Window_SetAlignment(uint8_t idx, WinAlign align) {
  * @param str     待渲染的字符串 (混合 ASC + GBK)
  * @param color   前景色
  * @param mode    画布内存模式 (CANVAS_R / CANVAS_RG / CANVAS_Y / CANVAS_G)
+ * @param valign  竖直对齐方式 (顶部/居中/底部)
  *
  * 流程：测量字符串尺寸 → Pool_AllocCanvas (带复用) → 绘制 → 原子切换窗口引用
+ * 绘制完后根据 valign 和窗口高度计算 y_offset 实现竖直对齐
  */
 void Window_FillText(uint8_t win_idx, const char *str, CanvasColor color,
-                     CanvasMode mode) {
+                     CanvasMode mode, Valign valign) {
   if (win_idx >= MAX_WINDOWS || str == NULL)
     return;
+
+  LED_Window *win = &window_list[win_idx];
 
   // --- 1. 测量阶段 ---
   Size2D size = _Window_MeasureText(str);
 
   // --- 2. 分配阶段（带原位复用检测） ---
-  int16_t old_h = window_list[win_idx].canvas.handle;
+  int16_t old_h = win->canvas.handle;
   CanvasHandle new_canvas = Pool_AllocCanvas(size.w, size.h, old_h, mode);
 
   if (new_canvas.handle != -1) {
@@ -155,13 +195,13 @@ void Window_FillText(uint8_t win_idx, const char *str, CanvasColor color,
     ctx.target = &new_canvas;
     ctx.cur_x = 0;
     ctx.cur_y = 0;
-    _Window_RenderText(&ctx, str, color);
+    _Window_RenderText(&ctx, str, color, valign, size.h);
 
     // --- 4. 原子切换 ---
     if (new_canvas.handle != old_h && old_h != -1) {
       Pool_FreeCanvas(old_h);
     }
-    window_list[win_idx].canvas = new_canvas;
+    win->canvas = new_canvas;
   }
 }
 
@@ -326,9 +366,16 @@ void Window_BlitToScreen(LED_Window *win, uint16_t h_px, uint8_t color_high,
     if (cy < 0 || cy >= (int16_t)cv->height)
       continue; // 画布外行, 已清完
 
-    uint8_t *r_line = cv->r_ptr + (uint16_t)cy * cv_bw;
+    /* 确定形状源：CANVAS_G 时 r_ptr == NULL，用 g_ptr 替代 */
+    uint8_t *shape_ptr = cv->r_ptr ? cv->r_ptr : cv->g_ptr;
+    uint8_t *r_line = shape_ptr + (uint16_t)cy * cv_bw;
+    /* has_g: 独立绿色平面（仅 CANVAS_RG 模式） */
     uint8_t has_g = (cv->g_ptr != NULL && cv->g_ptr != cv->r_ptr);
     uint8_t *g_line = has_g ? (cv->g_ptr + (uint16_t)cy * cv_bw) : NULL;
+    /* is_yellow: 红绿共用同一平面，需要产生黄色 */
+    uint8_t is_yellow = (cv->g_ptr != NULL && cv->g_ptr == cv->r_ptr);
+    /* is_green_only: 仅有绿色平面 */
+    uint8_t is_green_only = (cv->r_ptr == NULL && cv->g_ptr != NULL);
 
     // 静态文本 vs 歌词模式的 on_byte 选择
     uint8_t on_r, on_g;
@@ -336,7 +383,16 @@ void Window_BlitToScreen(LED_Window *win, uint16_t h_px, uint8_t color_high,
       // 歌词模式: on_r/on_g 暂不用(块级用 color_high/color_base 动态选择)
       on_r = 0xFF;
       on_g = 0xFF;
+    } else if (is_yellow) {
+      /* CANVAS_Y: 形状源同一平面编码所有颜色，用黄色 on_byte */
+      on_r = on_byte_for(3, q);
+      on_g = 0xFF;
+    } else if (is_green_only) {
+      /* CANVAS_G: 形状源来自 g_ptr，只染绿色 */
+      on_r = on_byte_for(2, q);
+      on_g = 0xFF;
     } else {
+      /* CANVAS_R / CANVAS_RG: 正常红/绿两平面 */
       on_r = on_byte_for(1, q);
       on_g = on_byte_for(2, q);
     }

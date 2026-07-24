@@ -29,6 +29,7 @@ typedef struct {
 } LED_Window;
 
 typedef enum { ALIGN_LEFT, ALIGN_CENTER, ALIGN_RIGHT } WinAlign;
+typedef enum { VALIGN_TOP, VALIGN_MIDDLE, VALIGN_BOTTOM } Valign;
 
 extern LED_Window window_list[MAX_WINDOWS];
 
@@ -54,7 +55,8 @@ void Window_BlitToScreen(LED_Window *win, uint16_t h_px, uint8_t color_high,
 
 // 填充文本到窗口画布（Flash 字库适配器版）
 // 参数含义同 UI_UpdateTextEx，流程：测量→分配→绘制→原子切换
+// valign: 竖直对齐（顶部/居中/底部），基于窗口高度与画布高度计算 y_offset
 void Window_FillText(uint8_t win_idx, const char *str, CanvasColor color,
-                     CanvasMode mode);
+                     CanvasMode mode, Valign valign);
 
 #endif
