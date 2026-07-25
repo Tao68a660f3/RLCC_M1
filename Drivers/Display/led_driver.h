@@ -29,6 +29,7 @@ typedef enum {
 void LED_Init(TIM_HandleTypeDef *htim);
 void LED_SetPixel(int16_t x, int16_t y, LED_Color color);
 void LED_Clear(void);
+void LED_ClearAreaAllBuffers(int16_t x, int16_t y, uint16_t w, uint16_t h);
 void LED_Commit(void);
 
 #endif

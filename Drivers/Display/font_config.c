@@ -19,6 +19,7 @@ static const uint32_t g_asc_addrs[FONT_ASC_COUNT] = {
     FONT_ADDR_ASC2010, /* FONT_ASC_2010 */
     FONT_ADDR_ASC2410, /* FONT_ASC_2410 */
     FONT_ADDR_ASC2412, /* FONT_ASC_2412 */
+    FONT_ADDR_ASCVE20, /* FONT_ASCV_20 */
 };
 
 /* --- GBK 字库元数据表（顺序与 FONT_GBK_xxx 宏一一对应） -------------- */

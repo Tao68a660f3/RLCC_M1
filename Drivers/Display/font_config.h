@@ -18,14 +18,15 @@
 #define FONT_ADDR_ASC2010 0x00D000
 #define FONT_ADDR_ASC2410 0x010000
 #define FONT_ADDR_ASC2412 0x014000
+#define FONT_ADDR_ASCVE20 0x018000
 
 /* --- GBK 汉字字库 --- */
-#define FONT_ADDR_GBK1616H 0x018000
-#define FONT_ADDR_GBK1616S 0x0C5000
-#define FONT_ADDR_GBK1624M 0x172000
-#define FONT_ADDR_GBK1624Y 0x275000
-#define FONT_ADDR_GBK2432S 0x378000
-#define FONT_ADDR_GBK2432H 0x57E000
+#define FONT_ADDR_GBK1616H 0x01C000
+#define FONT_ADDR_GBK1616S 0x0C9000
+#define FONT_ADDR_GBK1624M 0x176000
+#define FONT_ADDR_GBK1624Y 0x279000
+#define FONT_ADDR_GBK2432S 0x37C000
+#define FONT_ADDR_GBK2432H 0x582000
 
 /* ====================================================================
  * 字体序号宏定义
@@ -45,8 +46,9 @@
 #define FONT_ASC_2010 6
 #define FONT_ASC_2410 7
 #define FONT_ASC_2412 8
+#define FONT_ASCV_20 9
 
-#define FONT_ASC_COUNT 9 /* ASCII 字体总数 */
+#define FONT_ASC_COUNT 10 /* ASCII 字体总数 */
 
 /* --- GBK 字体序号 --- */
 #define FONT_GBK_1616H 0

@@ -1,6 +1,7 @@
 #include "lyric_window_manager.h"
 #include "canvas_renderer.h"
 #include "flash_font.h"
+#include "led_driver.h"
 #include "lyric_service.h"
 #include "mem_pool.h"
 #include "stdio.h"
@@ -48,13 +49,16 @@ void LyricWM_Init(uint8_t line_count) {
 
 void LyricWM_Reset(void) {
   for (int i = 0; i < used_lyric_lines; i++) {
-    // 顺便把物理窗口清空（黄底色 → CANVAS_Y）
+    // 清除当前 write_idx 的 canvas 内容
     Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
+
+    // 清除双缓冲中此窗口物理区域的残留像素
+    LED_Window *win = &window_list[i];
+    LED_ClearAreaAllBuffers(win->x, win->y, win->w, win->h);
 
     l_win_cfg[i].bound_area = NULL;        // 断开指针绑定
     l_win_cfg[i].last_line_index = 0xFFFF; // 重置行号记录
 
-    LED_Window *win = &window_list[l_win_cfg[i].win_idx];
     win->x_offset = 0;
   }
   g_lyric_progress = 0;
@@ -353,7 +357,7 @@ void LyricWM_Process(void) {
       display_start_idx = i;
       break;
     }
-    if (now < a->start_time_ms) {
+    if (now + 1000 < a->start_time_ms) {
       display_start_idx = (i > 0) ? (i - 1) : 0;
       break;
     }
@@ -412,6 +416,10 @@ void LyricWM_Process(void) {
 
         // 第一步：清除旧内容（清空画布，模式与底色保持一致）
         Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_MIDDLE);
+
+        // 清除双缓冲中此窗口物理区域的残留像素
+        LED_Window *win = &window_list[cfg->win_idx];
+        LED_ClearAreaAllBuffers(win->x, win->y, win->w, win->h);
 
         // 第二步：（移动窗口——在 _RecalcOffsetYByTimeOrder 中统一处理）
 

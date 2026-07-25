@@ -10,6 +10,7 @@ files = [
     "ASC2010.BIN",
     "ASC2410.BIN",
     "ASC2412.BIN",
+    "ASCVE20.BIN",
     "GBK1616H.BIN",
     "GBK1616S.BIN",
     "GBK1624M.BIN",

@@ -3,6 +3,7 @@
 #include "main.h"
 #include "rtc.h"
 #include "spi.h"
+#include "stm32f4xx_hal.h"
 #include "tim.h"
 #include "usart.h"
 
@@ -35,14 +36,11 @@ extern uint8_t need_commit;
 
 static void IR_Control();
 
-static char Msg_01[] = {0xBB, 0xB6, 0xD3, 0xAD, 0xCA, 0xB9, 0xD3, 0xC3,
-                        0xCB, 0xAB, 0xC9, 0xAB, 0xB8, 0xE8, 0xB4, 0xCA,
-                        0xCF, 0xD4, 0xCA, 0xBE, 0xC6, 0xF7, 0xA3, 0xA1,
-                        0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D, 0x65, 0x20,
-                        0x74, 0x6F, 0x20, 0x75, 0x73, 0x65, 0x21, 0x00};
-static char Msg_02[] = {0xBB, 0xB6, 0xD3, 0xAD, 0xCA, 0xB9, 0xD3, 0xC3, 0xCB,
+static char Msg_01[] = {0xBB, 0xB6, 0xD3, 0xAD, 0xCA, 0xB9, 0xD3, 0xC3, 0xCB,
                         0xAB, 0xC9, 0xAB, 0xB8, 0xE8, 0xB4, 0xCA, 0xCF, 0xD4,
                         0xCA, 0xBE, 0xC6, 0xF7, 0xA3, 0xA1, 0x00};
+static char Msg_02[] = {0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D, 0x65, 0x20,
+                        0x54, 0x6F, 0x20, 0x55, 0x73, 0x65, 0x21, 0x00};
 
 void App_Init() {
   COM_Init(&huart1);
@@ -53,20 +51,30 @@ void App_Init() {
   Env_Manager_Init();
 
   Font_Select_ASC(FONT_ASC_1608);
-  Font_Select_GBK(FONT_GBK_1616S);
+  Font_Select_GBK(FONT_GBK_1616H);
 
   LED_Init(&htim1);
   WindowManager_Init();
 
-  // /* 配置歌词物理窗口：y 统一为 0，高度由 LYRIC_LINE_COUNT 决定 */
-  // uint16_t win_h = 32 / LYRIC_LINE_COUNT; // 总高度 32px 均分
-  // for (int i = 0; i < LYRIC_LINE_COUNT; i++) {
-  //   Window_Config(i, 0, 0, 192, win_h);
-  //   Window_SetAlignment(i, ALIGN_LEFT);
-  // }
-
-  // /* 初始化歌词窗口管理器 */
-  // LyricWM_Init(LYRIC_LINE_COUNT);
+  Window_Config(0, 0, 0, 192, 16);
+  Window_Config(1, 0, 24, 192, 8);
+  Window_FillText(0, Msg_01, C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
+  Window_SetAlignment(0, ALIGN_CENTER);
+  for (uint8_t j = 0; j < 2; j++) {
+    need_commit = 0; // 确保显示的启动信息能提交上。
+    LED_Commit();
+    WindowManager_Process();
+  }
+  HAL_Delay(500);
+  Font_Select_ASC(FONT_ASC_0805);
+  Window_FillText(1, Msg_02, C_GREEN, CANVAS_G, VALIGN_MIDDLE);
+  Window_SetAlignment(1, ALIGN_CENTER);
+  for (uint8_t j = 0; j < 2; j++) {
+    need_commit = 0; // 确保显示的启动信息能提交上。
+    LED_Commit();
+    WindowManager_Process();
+  }
+  HAL_Delay(5000);
 
   /* 启动默认 UI 模式（HomeLife：大字时间 + 温湿度） */
   UI_Manager_SetMode_HomeLife();

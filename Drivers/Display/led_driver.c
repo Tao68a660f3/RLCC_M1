@@ -84,6 +84,38 @@ void LED_SetPixel(int16_t x, int16_t y, LED_Color color) {
 
 void LED_Clear(void) { memset(frame_buffer, 0xff, sizeof(frame_buffer)); }
 
+/** 清除指定物理区域在两个双缓冲中的像素 */
+void LED_ClearAreaAllBuffers(int16_t x, int16_t y, uint16_t w, uint16_t h) {
+  if (x < 0) {
+    w += x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    y = 0;
+  }
+  if (x + w > WIDTH)
+    w = WIDTH - x;
+  if (y + h > HEIGHT)
+    h = HEIGHT - y;
+  if ((int16_t)w <= 0 || (int16_t)h <= 0)
+    return;
+
+  for (uint8_t buf = 0; buf < 2; buf++) {
+    for (uint16_t row = y; row < y + h; row++) {
+      uint8_t r = row % 16;
+      uint8_t q = row / 16;
+      uint8_t r_bit = (uint8_t)(1 << (q * 2));
+      uint8_t g_bit = (uint8_t)(2 << (q * 2));
+      uint8_t clr_mask = (uint8_t)(r_bit | g_bit);
+
+      for (uint16_t col = (uint16_t)x; col < x + w; col++) {
+        frame_buffer[buf][r][col] |= clr_mask;
+      }
+    }
+  }
+}
+
 // 6. 提交接口：交换缓冲区并清空下一帧
 void LED_Commit(void) {
   uint8_t old_read_idx = read_idx;

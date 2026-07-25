@@ -106,5 +106,5 @@ void Event_Dispatch_IR(uint8_t cmd) {
       return;
     }
   }
-  printf("Key 0x%02X: Nothing happens in this mode.\r\n", cmd);
+  // printf("Key 0x%02X: Nothing happens in this mode.\r\n", cmd);
 }

@@ -25,7 +25,7 @@ static const ModeFonts s_mode_fonts[] = {
     [UI_MODE_2_Line] = {FONT_ASC_1608, FONT_GBK_1616S},
     [UI_MODE_MUSIC_INFO] = {FONT_ASC_1608, FONT_GBK_1616S},
     [UI_MODE_HOME_LIFE] = {FONT_ASC_2412, FONT_GBK_2432S},
-    [UI_MODE_1_LINE_MID_FONT] = {FONT_ASC_2010, FONT_GBK_1624M},
+    [UI_MODE_1_LINE_MID_FONT] = {FONT_ASC_2010, FONT_GBK_1624Y},
     [UI_MODE_1_LINE_BIG_FONT] = {FONT_ASC_2412, FONT_GBK_2432S},
 };
 
@@ -145,7 +145,7 @@ static void _Render_1LineMid_Tick(void) {
 }
 
 static void _Render_HomeLife_Tick(void) {
-  HOME_LIFE_UPDATE(0, s_cache_time, g_str_time, FONT_ASC_2010, C_YELLOW);
+  HOME_LIFE_UPDATE(0, s_cache_time, g_str_time, FONT_ASCV_20, C_YELLOW);
   HOME_LIFE_UPDATE(1, s_cache_date, g_str_date_std, FONT_ASC_0805, C_GREEN);
   HOME_LIFE_UPDATE_AMPM(s_cache_ampm, g_str_ampm, FONT_ASC_0805, C_YELLOW);
   HOME_LIFE_UPDATE(3, s_cache_week, g_str_week_en, FONT_ASC_0805, C_GREEN);
@@ -430,12 +430,12 @@ void UI_Manager_SetMode_HomeLife(void) {
   g_curr_ui_mode = UI_MODE_HOME_LIFE;
   _ApplyDefaultFont();
 
-  Window_Config(0, 0, 0, 128, 24);  // hh:mm:ss 大字时间
-  Window_Config(1, 0, 24, 128, 8);  // yyyy-mm-dd 日期
-  Window_Config(2, 128, 0, 64, 8);  // AM/PM
-  Window_Config(3, 128, 8, 64, 8);  // 星期
-  Window_Config(4, 128, 16, 64, 8); // 温度
-  Window_Config(5, 128, 24, 64, 8); // 湿度
+  Window_Config(0, 0, 0, 152, 24);  // hh:mm:ss 大字时间
+  Window_Config(1, 0, 24, 152, 8);  // yyyy-mm-dd 日期
+  Window_Config(2, 152, 0, 40, 8);  // AM/PM
+  Window_Config(3, 152, 8, 40, 8);  // 星期
+  Window_Config(4, 152, 16, 40, 8); // 温度
+  Window_Config(5, 152, 24, 40, 8); // 湿度
 
   _Reset_HomeLife_Cache();
   LyricWM_Init(0); // used_lyric_lines=0，LyricWM_RenderMgr 跳过歌词
