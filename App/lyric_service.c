@@ -1,9 +1,11 @@
 #include "lyric_service.h"
 #include "lyric_window_manager.h"
 #include "stdbool.h"
+#include <stdint.h>
 #include <string.h>
 
 SystemStatus g_sys;
+uint8_t media_updated = 0;
 
 void LyricService_Init(void) { memset(&g_sys, 0, sizeof(g_sys)); }
 
@@ -107,7 +109,7 @@ void Lyric_OnMetadataReceived(uint8_t *payload, uint8_t len) {
   g_sys.remote_time_ms = 0;
   g_sys.local_record_tick = HAL_GetTick();
 
-  LyricWM_Reset();
+  media_updated = 1;
 }
 
 // 0x11: 时间同步

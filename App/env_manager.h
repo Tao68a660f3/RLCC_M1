@@ -24,7 +24,7 @@ extern char g_str_ampm[3];      // "AM", "PM" 或 ""
 extern TimeFormat_t g_time_format_config;
 
 // --- 接口函数 ---
-void Env_Manager_Init(AHT30_HandleTypeDef *haht30);
+void Env_Manager_Init(void);
 void Env_Manager_Tick(void);
 void Env_Manager_SetFormat(TimeFormat_t format);
 

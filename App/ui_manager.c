@@ -1,5 +1,8 @@
 #include "ui_manager.h"
 #include "canvas_renderer.h"
+#include "com_manager.h"
+#include "lyric_service.h"
+#include "lyric_window_manager.h"
 #include "mem_pool.h"
 #include "window_manager.h"
 #include <string.h>
@@ -55,9 +58,21 @@ void UI_Manager_OnLineReceived(const char *text) {
 
 // ========== 以下为占位桩函数，后续可按需实现 ==========
 
-void UI_Manager_OnMusicChanged(void) {}
+void UI_Manager_OnMusicChanged(void) { LyricWM_Reset(); }
 
-void UI_Manager_Tick(void) {}
+void UI_Manager_Tick(void) {
+  switch (g_curr_sys_mode) {
+  case SYS_MODE_TXT_MODE:
+    COM_Process_TextMode();
+    break;
+  case SYS_MODE_PROTOCOL_MODE:
+    COM_Process_ProtocolMode();
+    break;
+  default:
+    COM_Process_TextMode();
+    break;
+  }
+}
 
 void UI_Layout_Apply(UI_Mode_t mode) {}
 

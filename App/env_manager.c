@@ -1,4 +1,5 @@
 #include "env_manager.h"
+#include "i2c.h"
 #include "lyric_service.h"
 #include "rtc.h"
 #include <stdio.h>
@@ -20,9 +21,9 @@ TimeFormat_t g_time_format_config = TIME_FORMAT_24H;
 
 // 内部状态记录
 static RTC_DateTimeTypeDef last_sync_time;
-static uint32_t last_dht_trigger_tick = 0;
+static AHT30_HandleTypeDef s_haht30;
+static uint32_t last_aht_trigger_tick = 0;
 static uint32_t last_rtc_read_tick = 0;
-static AHT30_HandleTypeDef *p_haht30 = NULL;
 
 /**
  * @brief 手搓数字转字符（补零）
@@ -88,16 +89,17 @@ static void _Env_Refine_Date(RTC_DateTimeTypeDef *t) {
   g_str_week_en[3] = '\0';
 }
 
-void Env_Manager_Init(AHT30_HandleTypeDef *haht30) {
-  p_haht30 = haht30;
+void Env_Manager_Init(void) {
+  // --- 1. 初始化 AHT30 传感器（env_manager 自己持有）---
+  AHT30_Init(&s_haht30);
 
-  // --- 1. 强制进行第一次同步读取 ---
+  // --- 2. 强制进行第一次同步读取 ---
   RTC_GetDateTime(&hrtc, &last_sync_time);
   _Env_Refine_Time(&last_sync_time);
   _Env_Refine_Date(&last_sync_time);
 
-  // --- 2. 初始化传感器计时器 ---
-  last_dht_trigger_tick = HAL_GetTick();
+  // --- 3. 初始化传感器计时器 ---
+  last_aht_trigger_tick = HAL_GetTick();
   last_rtc_read_tick = HAL_GetTick();
 }
 
@@ -145,11 +147,13 @@ void Env_Manager_Tick(void) {
     last_rtc_read_tick = now;
   }
 
-  // --- 3. AHT30 数据读取 (AHT30_Process_Background 在主循环跑，这里只是取数)
-  // ---
-  if (now - last_dht_trigger_tick > 10000) {
+  // --- 2.5 AHT30 状态机驱动（每帧调用，内部非阻塞）---
+  AHT30_Process_Background(&hi2c1, &s_haht30);
+
+  // --- 3. AHT30 数据读取（每 3s 取一次最新值）---
+  if (now - last_aht_trigger_tick > 3000) {
     float temp = 0.0f, hum = 0.0f;
-    if (p_haht30 && AHT30_Get_SafeData(p_haht30, &temp, &hum)) {
+    if (AHT30_Get_SafeData(&s_haht30, &temp, &hum)) {
       int t_int = (int)temp;
       int t_dec = (int)(temp * 10) % 10;
       if (t_dec < 0)
@@ -158,7 +162,7 @@ void Env_Manager_Tick(void) {
       snprintf(g_str_temp, sizeof(g_str_temp), "%2d.%dC", t_int, t_dec);
       snprintf(g_str_humi, sizeof(g_str_humi), "%2d%%", (int)hum);
     }
-    last_dht_trigger_tick = now;
+    last_aht_trigger_tick = now;
   }
 }
 

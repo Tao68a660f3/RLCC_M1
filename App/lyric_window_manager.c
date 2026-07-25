@@ -63,11 +63,12 @@ void LyricWM_Init(uint8_t line_count) {
 
 void LyricWM_Reset(void) {
   for (int i = 0; i < used_lyric_lines; i++) {
+    // 顺便把物理窗口清空（黄底色 → CANVAS_Y）
+    Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
+
     l_win_cfg[i].bound_area = NULL;        // 断开指针绑定
     l_win_cfg[i].last_line_index = 0xFFFF; // 重置行号记录
 
-    // 顺便把物理窗口清空（黄底色 → CANVAS_Y）
-    Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
     LED_Window *win = &window_list[l_win_cfg[i].win_idx];
     win->x_offset = 0;
   }

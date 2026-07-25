@@ -51,6 +51,7 @@ typedef struct {
 } SystemStatus;
 
 extern SystemStatus g_sys;
+extern uint8_t media_updated;
 
 // 接口函数
 void LyricService_Init(void);
