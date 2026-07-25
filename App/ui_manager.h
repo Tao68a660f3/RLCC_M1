@@ -4,16 +4,17 @@
 #include "main.h"
 
 typedef enum {
-  UI_MODE_LYRIC_2P = 0, // 模式1：双行歌词（默认）
-  UI_MODE_MUSIC_INFO,   // 模式2：时间进度 + 标题轮换 + 单行歌词
-  UI_MODE_HOME_LIFE,    // 模式3：大字时间 + 温湿度 + 单行歌词
-  UI_MODE_MAX,
+  UI_MODE_2_Line = 0,      // 模式1：双行歌词（默认）
+  UI_MODE_MUSIC_INFO,      // 模式2：时间进度 + 标题轮换 +
+                           // 单行歌词(仅SYS_MODE_PROTOCOL_MODE可以使用)
+  UI_MODE_HOME_LIFE,       // 模式3：大字时间 + 温湿度
+  UI_MODE_1_LINE_MID_FONT, // 模式4：24点字体歌词
+  UI_MODE_1_LINE_BIG_FONT, // 模式5：32点字体歌词
 } UI_Mode_t;
 
 typedef enum {
   SYS_MODE_TXT_MODE = 0,
   SYS_MODE_PROTOCOL_MODE,
-  SYS_MODE_MAX,
 } Sys_Mode_t;
 
 extern UI_Mode_t g_curr_ui_mode;

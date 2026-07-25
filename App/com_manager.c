@@ -4,7 +4,6 @@
 #include "ui_manager.h"
 #include <string.h>
 
-
 static UART_HandleTypeDef *p_huart;
 uint8_t rx_raw_buffer[RX_BUF_SIZE]; // DMA直接使用的原始缓冲区
 
@@ -47,7 +46,7 @@ void COM_UART_IDLE_Callback(UART_HandleTypeDef *huart) {
  * 遇到 '\n' / '\r' / '\0' 则切出一条完整行，回调 UI_Manager_OnLineReceived。
  */
 void COM_Process_TextMode(void) {
-#define LINE_BUF_SIZE 128
+#define LINE_BUF_SIZE 256
 
   // huart1.hdmarx 在 main.h 中有 extern，直接用
   extern UART_HandleTypeDef huart1;
@@ -70,8 +69,17 @@ void COM_Process_TextMode(void) {
         UI_Manager_OnLineReceived(line_cache);
         cache_idx = 0;
       }
+      // 跳过 CR/LF 后面可能跟着的配对字符（如 \r\n 或 \n\r）
+      // 避免空行被回调（cache_idx==0 时不会触发）
     } else {
       if (cache_idx < LINE_BUF_SIZE - 1) {
+        line_cache[cache_idx++] = (char)c;
+      } else {
+        // cache 满了，强制切行，避免整行数据永久丢失
+        line_cache[LINE_BUF_SIZE - 1] = '\0';
+        UI_Manager_OnLineReceived(line_cache);
+        cache_idx = 0;
+        // 这个字符还没存进去，重试一次
         line_cache[cache_idx++] = (char)c;
       }
     }

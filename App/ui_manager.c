@@ -5,8 +5,8 @@
 #include <string.h>
 
 // ========== 全局状态 ==========
-UI_Mode_t g_curr_ui_mode = UI_MODE_LYRIC_2P;
-Sys_Mode_t g_curr_sys_mode = SYS_MODE_TXT_MODE;
+UI_Mode_t g_curr_ui_mode = UI_MODE_2_Line;
+Sys_Mode_t g_curr_sys_mode = SYS_MODE_PROTOCOL_MODE;
 
 /**
  * @brief 文本模式消费者回调：将一行文本渲染到双窗口的交替位置

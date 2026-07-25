@@ -16,6 +16,7 @@
 #include "ir_remote.h"
 #include "led_display.h"
 #include "led_driver.h"
+#include "lyric_window_manager.h"
 #include "ui_manager.h"
 #include "w25q64.h"
 #include "window_manager.h"
@@ -23,6 +24,9 @@
 #include <stdio.h>
 
 #include "app.h"
+
+// 歌词窗口模式选择：改为 1 则单行32点，改为 2 则双行16点，改为 4 则四行8点
+#define LYRIC_LINE_COUNT 2
 
 uint32_t ui_timer = 0;
 AHT30_HandleTypeDef aht30;
@@ -56,18 +60,15 @@ void App_Init() {
   LED_Init(&htim1);
   WindowManager_Init();
 
-  /* 窗口：显示测试文本 */
-  Window_Config(0, 0, 0, 192, 16);
-  Window_FillText(0, Msg_01, C_RED, CANVAS_R, VALIGN_MIDDLE);
-  Window_SetAlignment(0, ALIGN_LEFT);
-  window_list[0].scroll_divider = 1;
-  window_list[0].scroll_step = -1;
+  /* 配置歌词物理窗口：y 统一为 0，高度由 LYRIC_LINE_COUNT 决定 */
+  uint16_t win_h = 32 / LYRIC_LINE_COUNT; // 总高度 32px 均分
+  for (int i = 0; i < LYRIC_LINE_COUNT; i++) {
+    Window_Config(i, 0, 0, 192, win_h);
+    Window_SetAlignment(i, ALIGN_LEFT);
+  }
 
-  Window_Config(1, 0, 16, 192, 16);
-  Window_FillText(1, Msg_02, C_GREEN, CANVAS_G, VALIGN_MIDDLE);
-  Window_SetAlignment(1, ALIGN_LEFT);
-  window_list[1].scroll_divider = 1;
-  window_list[1].scroll_step = -1;
+  /* 初始化歌词窗口管理器 */
+  LyricWM_Init(LYRIC_LINE_COUNT);
 }
 
 void App_Loop() {
@@ -82,7 +83,8 @@ void App_Loop() {
     COM_Process_TextMode();
   }
 
-  WindowManager_Process();
+  // WindowManager_Process();
+  LyricWM_RenderMgr();
 
   /* 2. 前台业务：比如屏幕每 500ms 刷一次，或者串口/网络上报 */
   if (HAL_GetTick() - ui_timer >= 3000) {

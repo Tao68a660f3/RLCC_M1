@@ -26,7 +26,6 @@
 #include "tim.h"
 #include "usart.h"
 
-
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app.h"

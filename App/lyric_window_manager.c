@@ -9,38 +9,65 @@
 
 // #define DEBUG_PRT
 
+/**
+ * @brief 根据颜色选择对应的画布内存模式
+ *        CANVAS_R:  红色像素写入 r_ptr (形状掩码从 r_ptr 读)
+ *        CANVAS_G:  绿色像素写入 g_ptr (形状掩码从 g_ptr 读)
+ *        CANVAS_Y:  红绿共用同一平面 r_ptr==g_ptr
+ */
+static CanvasMode _ColorToCanvasMode(CanvasColor color) {
+  switch (color) {
+  case C_RED:
+    return CANVAS_R;
+  case C_GREEN:
+    return CANVAS_G;
+  case C_YELLOW:
+    return CANVAS_Y;
+  default:
+    return CANVAS_R;
+  }
+}
+
 extern volatile uint8_t need_commit;
 
 LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
 uint16_t g_lyric_progress = 0;
 uint16_t used_lyric_lines = 2;
+uint16_t lyric_total_height = 0;
 
-void LyricWM_Init(void) {
-  for (int i = 0; i < MAX_LYRIC_LINES; i++) {
-    l_win_cfg[i].win_idx = i;              // 对应 LED_Window 窗口列表的索引
-    l_win_cfg[i].bound_area = NULL;        // 关键：初始没绑定任何数据
-    l_win_cfg[i].last_line_index = 0xFFFF; // 初始行号
+void LyricWM_Init(uint8_t line_count) {
+  if (line_count > MAX_LYRIC_LINES)
+    line_count = MAX_LYRIC_LINES;
+  used_lyric_lines = line_count;
+
+  uint16_t acc_y = 0;
+  for (int i = 0; i < used_lyric_lines; i++) {
+    l_win_cfg[i].win_idx = i; // 对应 LED_Window 窗口列表的索引
+    l_win_cfg[i].bound_area = NULL;
+    l_win_cfg[i].last_line_index = 0xFFFF;
     l_win_cfg[i].last_cmd = 0;
 
     // 默认配色方案
     l_win_cfg[i].color_base = i % 2 ? C_RED : C_GREEN;
+
     l_win_cfg[i].color_high = C_YELLOW;
 
-    // 设置位置
     l_win_cfg[i].offset_x = 0;
-    l_win_cfg[i].offset_y = i * 16;
+    l_win_cfg[i].offset_y = acc_y; // 累加排布
+    acc_y += window_list[i].h;
   }
+  lyric_total_height = acc_y;
 
   g_lyric_progress = 0;
 }
 
 void LyricWM_Reset(void) {
-  for (int i = 0; i < MAX_LYRIC_LINES; i++) {
+  for (int i = 0; i < used_lyric_lines; i++) {
     l_win_cfg[i].bound_area = NULL;        // 断开指针绑定
     l_win_cfg[i].last_line_index = 0xFFFF; // 重置行号记录
 
-    // 顺便把物理窗口清空
-    Window_FillText(i, " ", C_YELLOW, CANVAS_R, VALIGN_TOP);
+    // 顺便把物理窗口清空（黄底色 → CANVAS_Y）
+    Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_TOP);
     LED_Window *win = &window_list[l_win_cfg[i].win_idx];
     win->x_offset = 0;
   }
@@ -75,23 +102,16 @@ static uint16_t _Calculate_Mapped_Progress_Enhanced(LyricArea *area,
     return 0;
 
   // --- 情况 A: 逐字歌词 (0x14) ---
-  // 注意：此处假设 area->time_offsets[i] 是相对于行开始的时间戳
-  // 数组有效长度为 area->word_count + 1 (最后一个是全行结束时间)
   if (area->cmd == 0x14 && area->word_count > 0) {
-    const int SKIP_WORDS = 1;         // 跳过前1个字开始滚
-    const int FINISH_EARLY_WORDS = 1; // 提前1个字滚完
+    const int SKIP_WORDS = 1;
+    const int FINISH_EARLY_WORDS = 1;
 
-    // 直接从 time_offsets 数组获取起始和结束时间点
-    // start_offset: 第 SKIP_WORDS 个词开始的时间
     uint32_t start_offset = area->time_offsets[SKIP_WORDS];
-
-    // end_offset: 倒数第 FINISH_EARLY_WORDS 个词开始的时间
     int end_idx = area->word_count - FINISH_EARLY_WORDS - 1;
     if (end_idx < 0)
       end_idx = 0;
     uint32_t end_offset = area->time_offsets[end_idx];
 
-    // 安全检查：防止偏移量计算逻辑导致除以0或倒流
     if (end_offset > start_offset) {
       if (elapsed <= start_offset)
         return 0;
@@ -103,7 +123,7 @@ static uint16_t _Calculate_Mapped_Progress_Enhanced(LyricArea *area,
     }
   }
 
-  // --- 情况 B: 普通歌词或保底 (HEAD_RATE/TAIL_RATE) ---
+  // --- 情况 B: 普通歌词或保底 ---
   uint32_t head_time = (area->duration * HEAD_RATE) / 10000;
   uint32_t tail_start_time =
       area->duration - (area->duration * TAIL_RATE) / 10000;
@@ -125,7 +145,6 @@ uint16_t Lyric_GetHighlightPx(LyricArea *area, uint32_t current_ms) {
     return 0;
   uint32_t elapsed = current_ms - area->start_time_ms;
 
-  // 找到当前时间落在哪一个词的区间内
   uint16_t acc_px = 0;
   for (int i = 0; i < area->word_count; i++) {
     uint32_t w_start = area->time_offsets[i];
@@ -133,7 +152,6 @@ uint16_t Lyric_GetHighlightPx(LyricArea *area, uint32_t current_ms) {
         (i < area->word_count - 1) ? area->time_offsets[i + 1] : area->duration;
 
     if (elapsed >= w_start && elapsed < w_end) {
-      // 词内线性插值：当前词已走过的像素
       uint32_t w_dur = w_end - w_start;
       uint32_t w_elapsed = elapsed - w_start;
       uint16_t w_px = (w_elapsed * area->word_widths[i]) / w_dur;
@@ -141,12 +159,11 @@ uint16_t Lyric_GetHighlightPx(LyricArea *area, uint32_t current_ms) {
     }
     acc_px += area->word_widths[i];
   }
-  return acc_px; // 唱完了
+  return acc_px;
 }
 
 /**
  * @brief 虚拟测量：严格基于 word_lens 进行分段宽度统计
- * 使用 Flash 字库适配器替代旧的 font_engine
  */
 void _Lyric_MeasureVerbatim(LyricArea *area) {
   if (area->cmd != 0x14)
@@ -174,7 +191,7 @@ void _Lyric_MeasureVerbatim(LyricArea *area) {
           rem -= 2;
         } else {
           p++;
-          rem--; // 容错处理
+          rem--;
         }
       }
       Canvas_MeasureStep(&ctx, &g, &size);
@@ -184,19 +201,13 @@ void _Lyric_MeasureVerbatim(LyricArea *area) {
 }
 
 /**
- * @brief 歌词着色渲染器 (优化版：采用块搬运)
- *
- * 替代原逐点 _Lyric_RenderWithShader，改为调用 Window_BlitToScreen。
- * Canvas 作为形状掩码 (CANVAS_R 单色画布)，h_px 决定高亮/底色分界。
- * screen_off_x/y 携带 cfg->offset 偏移，歌词着色在搬运阶段即时完成。
+ * @brief 歌词着色渲染器
  */
 static void _Lyric_RenderWithShader(LyricWinConfig *cfg, uint16_t h_px) {
   LED_Window *win = &window_list[cfg->win_idx];
   if (win->canvas.handle == -1)
     return;
 
-  // 调用统一块搬运函数，h_px 传给 Window_BlitToScreen 触发歌词着色模式
-  // off_x/off_y 传 cfg->offset_x/y 实现歌词窗口的屏幕偏移
   Window_BlitToScreen(win, h_px, cfg->color_high, cfg->color_base,
                       cfg->offset_x, cfg->offset_y);
 }
@@ -204,11 +215,11 @@ static void _Lyric_RenderWithShader(LyricWinConfig *cfg, uint16_t h_px) {
 static int _RecycleWindow(uint32_t now) {
   int target_w = -1;
   uint32_t max_overdue = 0;
-  for (int w = 0; w < MAX_LYRIC_LINES; w++) {
+  for (int w = 0; w < used_lyric_lines; w++) {
     if (l_win_cfg[w].is_occupied)
       continue;
     if (l_win_cfg[w].bound_area == NULL)
-      return w; // 优先返回空位
+      return w;
 
     uint32_t end = l_win_cfg[w].bound_area->start_time_ms +
                    l_win_cfg[w].bound_area->duration;
@@ -221,11 +232,60 @@ static int _RecycleWindow(uint32_t now) {
   return target_w;
 }
 
+/**
+ * @brief 对活跃窗口按歌词时间排序，从老到新累加 offset_y
+ *
+ * 实现方法：
+ *   1. 收集所有 [is_occupied && bound_area != NULL] 的窗口
+ *   2. 按它们在 sorted_lyrics 中的位置排序（老→新）
+ *   3. 从 0 开始累加物理窗口高度，写入 offset_y
+ */
+static void _RecalcOffsetYByTimeOrder(void) {
+  // 收集活跃窗口的索引与排序键
+  uint8_t active_idx[MAX_LYRIC_LINES];
+  uint32_t sort_key[MAX_LYRIC_LINES];
+  uint8_t active_count = 0;
+
+  for (int w = 0; w < used_lyric_lines; w++) {
+    LyricWinConfig *cfg = &l_win_cfg[w];
+    if (!cfg->is_occupied || cfg->bound_area == NULL)
+      continue;
+
+    // 在 sorted_lyrics 中查找该窗口绑定的 LyricArea 的位置
+    // 用 line_index 作为排序键（单调递增）
+    sort_key[active_count] = cfg->bound_area->line_index;
+    active_idx[active_count] = w;
+    active_count++;
+  }
+
+  // 简单冒泡排序（窗口数 <= 4，足够快）
+  for (uint8_t i = 0; i < active_count; i++) {
+    for (uint8_t j = i + 1; j < active_count; j++) {
+      if (sort_key[j] < sort_key[i]) {
+        uint32_t tmp_k = sort_key[i];
+        sort_key[i] = sort_key[j];
+        sort_key[j] = tmp_k;
+        uint8_t tmp_i = active_idx[i];
+        active_idx[i] = active_idx[j];
+        active_idx[j] = tmp_i;
+      }
+    }
+  }
+
+  // 累加重写 offset_y
+  uint16_t acc_y = 0;
+  for (uint8_t i = 0; i < active_count; i++) {
+    LyricWinConfig *cfg = &l_win_cfg[active_idx[i]];
+    cfg->offset_y = acc_y;
+    acc_y += window_list[cfg->win_idx].h;
+  }
+}
+
 void LyricWM_RenderMgr(void) {
   if (need_commit)
     return;
 
-  for (uint16_t i = MAX_LYRIC_LINES; i < MAX_WINDOWS; i++) {
+  for (uint16_t i = used_lyric_lines; i < MAX_WINDOWS; i++) {
     WindowManager_Single_Process(i);
   }
 
@@ -235,7 +295,6 @@ void LyricWM_RenderMgr(void) {
 }
 
 void LyricWM_Process(void) {
-
   uint32_t now = Get_Current_PlayTime();
 
   // --- 0. 准备工作 ---
@@ -281,13 +340,12 @@ void LyricWM_Process(void) {
       if (l_win_cfg[w].bound_area == target_area &&
           l_win_cfg[w].last_line_index == target_area->line_index) {
         l_win_cfg[w].is_occupied = 1;
-        l_win_cfg[w].offset_y = i * 16;
         break;
       }
     }
   }
 
-  // --- 4. 第二阶段：【新兵入伍/强行重绘】 ---
+  // --- 4. 第二阶段：【新兵入伍/清除旧内容 + 填充新内容】 ---
   for (int i = 0; i < used_lyric_lines; i++) {
     int lyric_idx = display_start_idx + i;
     if (lyric_idx >= g_sys.active_count)
@@ -306,23 +364,31 @@ void LyricWM_Process(void) {
       int target_w = _RecycleWindow(now);
       if (target_w != -1) {
         LyricWinConfig *cfg = &l_win_cfg[target_w];
+        CanvasMode cm = _ColorToCanvasMode(cfg->color_base);
+
+        // 第一步：清除旧内容（清空画布，模式与底色保持一致）
+        Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_TOP);
+
+        // 第二步：（移动窗口——在 _RecalcOffsetYByTimeOrder 中统一处理）
+
+        // 第三步：填充新歌词内容（模式与底色保持一致）
         if (target_area->cmd == 0x14)
           _Lyric_MeasureVerbatim(target_area);
 
-        // 歌词 Canvas 仅作为形状掩码，CANVAS_R 省 50% 内存
-        Window_FillText(cfg->win_idx, target_area->text, cfg->color_base,
-                        CANVAS_R, VALIGN_TOP);
+        Window_FillText(cfg->win_idx, target_area->text, cfg->color_base, cm,
+                        VALIGN_TOP);
 
         cfg->bound_area = target_area;
-        cfg->last_line_index =
-            target_area->line_index; // 记录行号，下次跳转时靠它识别刷新
+        cfg->last_line_index = target_area->line_index;
         cfg->is_occupied = 1;
-        cfg->offset_y = i * 16;
       }
     }
   }
 
-  // --- 5. 第三阶段：【渲染提交】 ---
+  // --- 4.5 第三步：【按时间顺序重算竖直位置】 ---
+  _RecalcOffsetYByTimeOrder();
+
+  // --- 5. 第四阶段：【渲染提交】 ---
   for (int w = 0; w < used_lyric_lines; w++) {
     LyricWinConfig *cfg = &l_win_cfg[w];
     if (cfg->bound_area == NULL)
