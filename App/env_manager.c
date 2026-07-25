@@ -5,19 +5,27 @@
 #include <stdio.h>
 #include <string.h>
 
+#define CELSIUS "\02"
+
 // --- 静态资源：英文查表 ---
 static const char *WEEK_NAMES[] = {"SUN", "MON", "TUE", "WED",
                                    "THU", "FRI", "SAT"};
 
 // --- 全局影子变量初始化 ---
 char g_str_time[9] = "00:00:00";
+char g_str_time_s[7] = "00:00";
 char g_str_date_std[11] = "2000-01-01";
+char g_str_date_md[6] = "01/01";
 char g_str_week_en[4] = "???";
-char g_str_temp[7] = "--.-C";
+char g_str_temp[7] = "--.-" CELSIUS;
 char g_str_humi[5] = "--%";
 char g_str_ampm[3] = "";
 
 TimeFormat_t g_time_format_config = TIME_FORMAT_24H;
+
+// 温湿度舒适度等级
+ComfortLevel_t g_temp_comfort = COMFORT_GREEN;
+ComfortLevel_t g_humi_comfort = COMFORT_GREEN;
 
 // 内部状态记录
 static RTC_DateTimeTypeDef last_sync_time;
@@ -51,16 +59,20 @@ static void _Env_Refine_Time(RTC_DateTimeTypeDef *t) {
         h = 12;
     }
   } else {
-    g_str_ampm[0] = '\0';
+    strcpy(g_str_ampm, " ");
   }
 
-  // 2. 填充 g_str_time "HH:MM:SS"
+  // 2. 填充 g_str_time "HH:MM:SS" 和 g_str_time_s "HH:MM"
   _uitoa_2d(h, &g_str_time[0]);
+  _uitoa_2d(h, &g_str_time_s[0]);
   g_str_time[2] = ':';
+  g_str_time_s[2] = ':';
   _uitoa_2d(t->minutes, &g_str_time[3]);
+  _uitoa_2d(t->minutes, &g_str_time_s[3]);
   g_str_time[5] = ':';
   _uitoa_2d(t->seconds, &g_str_time[6]);
   g_str_time[8] = '\0';
+  g_str_time_s[5] = '\0'; // fix: missing null terminator
 
   if (g_str_time[0] == '0') {
     g_str_time[0] = ' ';
@@ -83,8 +95,14 @@ static void _Env_Refine_Date(RTC_DateTimeTypeDef *t) {
   _uitoa_2d(t->day, &g_str_date_std[8]);
   g_str_date_std[10] = '\0';
 
-  // Week: SUN, MON... (HAL RTC: 1=Mon..7=Sun, 取模7得0=Sun)
-  uint8_t wix = t->weekday % 7;
+  // 填充 g_str_date_md "MM/DD"
+  _uitoa_2d(t->month, &g_str_date_md[0]);
+  g_str_date_md[2] = '/';
+  _uitoa_2d(t->day, &g_str_date_md[3]);
+  g_str_date_md[5] = '\0';
+
+  // Week: SUN, MON... (STM32 HAL RTC: 1=Mon, 2=Tue...6=Sat, 7=Sun)
+  uint8_t wix = (t->weekday == 7) ? 0 : t->weekday;
   strncpy(g_str_week_en, WEEK_NAMES[wix], 3);
   g_str_week_en[3] = '\0';
 }
@@ -117,7 +135,8 @@ void Env_Manager_Tick(void) {
     sync_time.hours = g_sys.rtc_buf[3];
     sync_time.minutes = g_sys.rtc_buf[4];
     sync_time.seconds = g_sys.rtc_buf[5];
-    sync_time.weekday = g_sys.rtc_buf[6] + 1; // DS1302 week 0~6 → HAL 1~7
+    // 协议: 0~6 (0=Sun, 1=Mon...6=Sat) → STM32 HAL RTC: 1~7 (1=Mon...7=Sun)
+    sync_time.weekday = (g_sys.rtc_buf[6] == 0) ? 7 : g_sys.rtc_buf[6];
 
     // 调用 HAL RTC 设置
     RTC_SetDateTime(&hrtc, &sync_time);
@@ -159,8 +178,24 @@ void Env_Manager_Tick(void) {
       if (t_dec < 0)
         t_dec = -t_dec;
 
-      snprintf(g_str_temp, sizeof(g_str_temp), "%2d.%dC", t_int, t_dec);
+      snprintf(g_str_temp, sizeof(g_str_temp), "%2d.%d" CELSIUS, t_int, t_dec);
       snprintf(g_str_humi, sizeof(g_str_humi), "%2d%%", (int)hum);
+
+      // 温度舒适度
+      if (temp >= 18.0f && temp <= 26.0f)
+        g_temp_comfort = COMFORT_GREEN;
+      else if (temp >= 14.0f && temp <= 32.0f)
+        g_temp_comfort = COMFORT_YELLOW;
+      else
+        g_temp_comfort = COMFORT_RED;
+
+      // 湿度舒适度
+      if (hum >= 40.0f && hum <= 70.0f)
+        g_humi_comfort = COMFORT_GREEN;
+      else if (hum >= 30.0f && hum <= 80.0f)
+        g_humi_comfort = COMFORT_YELLOW;
+      else
+        g_humi_comfort = COMFORT_RED;
     }
     last_aht_trigger_tick = now;
   }

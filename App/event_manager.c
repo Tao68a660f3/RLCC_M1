@@ -28,7 +28,10 @@ static void Slot_Playback_FastForward(void) {
 }
 
 // ====== 文本模式 — 向上位机请求信息 Slot ======
-static void Slot_HostReq_1(void) { /* TODO */ }
+static void Slot_HostReq_1(void) {
+  /* TODO */
+  printf("request: sys_info\r\n");
+}
 static void Slot_HostReq_2(void) { /* TODO */ }
 static void Slot_HostReq_3(void) { /* TODO */ }
 static void Slot_HostReq_4(void) { /* TODO */ }
@@ -52,10 +55,10 @@ static const IR_Binding_t protocol_bindings[] = {
     {0x16, UI_Manager_NextUIMode},    // * → 循环切换UI模式
     {0x0d, UI_Manager_ToggleSysMode}, // # → 切换系统模式
     // 方向键 → 播放控制
-    {0x18, Slot_Playback_Prev},        // 上 → 上一曲
-    {0x52, Slot_Playback_Next},        // 下 → 下一曲
-    {0x08, Slot_Playback_Rewind},      // 左 → 快退
-    {0x5a, Slot_Playback_FastForward}, // 右 → 快进
+    {0x18, Slot_Playback_Rewind},      // 上 → 快退
+    {0x52, Slot_Playback_FastForward}, // 下 → 快进
+    {0x08, Slot_Playback_Prev},        // 左 → 上一曲
+    {0x5a, Slot_Playback_Next},        // 右 → 下一曲
     {0x1c, Slot_Playback_PlayPause},   // OK → 播放/暂停
 };
 static const uint8_t protocol_bindings_cnt =

@@ -8,10 +8,12 @@
 #include <stdint.h>
 #include <string.h>
 
-
 // #define DEBUG_PRT
 
 extern volatile uint8_t need_commit;
+
+/** 每帧一次 EWMA 更新后，所有消费者直接读这个全局值 */
+static uint32_t s_curr_play_time_ms = 0;
 
 LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
 uint16_t g_lyric_progress = 0;
@@ -59,75 +61,70 @@ void LyricWM_Reset(void) {
 }
 
 /**
- * @brief 从系统状态结构体中计算当前播放的绝对时间 (ms)
- *
- * 平滑策略 (EWMA 低通滤波):
- *   - raw = remote_time_ms + (HAL_GetTick() - local_record_tick)
- *   - 当 raw > smooth 时: step = (raw - smooth) / 8，最少 1ms
- *   - 当 raw <= smooth 时: 不后退，仅前进 1ms
- *
- * 效果:
- *   - 正常播放时几乎无延迟跟随
- *   - 200ms 的 sync 跳变约 8 帧 (~250ms) 平滑吸收
- *   - 时间永不后退 (单调递增)
+ * @brief 每帧在 LyricWM_RenderMgr 入口调用一次，更新 EWMA 平滑时间
  */
-uint32_t Get_Current_PlayTime(void) {
+static void _UpdateSmoothTime(void) {
   static uint32_t s_smooth = 0;
 
-  // 如果从未收到过同步包，或者 local_record_tick 尚未初始化
+  // 从未收到同步包
   if (g_sys.local_record_tick == 0) {
-    return 0;
+    s_curr_play_time_ms = 0;
+    return;
   }
 
-  // 如果当前处于暂停状态，时间不再随系统 Tick 累加
+  // 暂停态：时间冻结
   if (!g_sys.is_playing) {
     s_smooth = g_sys.remote_time_ms;
-    return g_sys.remote_time_ms;
+    s_curr_play_time_ms = g_sys.remote_time_ms;
+    return;
   }
 
-  // 原始计算 (PC 推算)
+  // 原始推算
   uint32_t raw =
       g_sys.remote_time_ms + (HAL_GetTick() - g_sys.local_record_tick);
 
-  // 首次调用：直接初始化
+  // 首次
   if (s_smooth == 0) {
     s_smooth = raw;
-    return raw;
+    s_curr_play_time_ms = raw;
+    return;
   }
 
-// seek 检测阈值 (ms)：超过此值视为用户拖拽进度，立即跟随
 #define SEEK_THRESHOLD_MS 300
 
-  // EWMA 一阶低通
   if (raw > s_smooth) {
     uint32_t delta = raw - s_smooth;
     if (delta > SEEK_THRESHOLD_MS) {
-      // 用户向前拖拽进度，直接跳转
       s_smooth = raw;
     } else {
-      // 微小漂移/抖动：EWMA 平滑跟随
-      uint32_t step = (delta + 4) / 8; // delta/8 向上取整
+      uint32_t step = (delta + 4) / 8;
       if (step < 1)
         step = 1;
       if (step > delta)
-        step = delta; // 防止过冲
+        step = delta;
       s_smooth += step;
     }
   } else {
     uint32_t delta = s_smooth - raw;
     if (delta > SEEK_THRESHOLD_MS) {
-      // 用户向后拖拽进度，直接跳转
       s_smooth = raw;
     } else {
-      // 微小倒退：视为时钟噪声，以 1ms/帧 缓慢前进（保持单调）
       s_smooth += 1;
     }
   }
 
 #undef SEEK_THRESHOLD_MS
 
-  return s_smooth;
+  s_curr_play_time_ms = s_smooth;
 }
+
+/**
+ * @brief 读取当前播放时间 (ms)
+ *
+ * 注意：此函数已是轻量读全局变量，每帧可多次调用。
+ *       实际 EWMA 更新由 _UpdateSmoothTime 每帧仅执行一次。
+ */
+uint32_t Get_Current_PlayTime(void) { return s_curr_play_time_ms; }
 
 /**
  * @brief 优化版进度计算
@@ -328,6 +325,9 @@ static void _RecalcOffsetYByTimeOrder(void) {
 void LyricWM_RenderMgr(void) {
   if (need_commit)
     return;
+
+  /* === 每帧仅在此处更新一次 EWMA 平滑时间 === */
+  _UpdateSmoothTime();
 
   for (uint16_t i = used_lyric_lines; i < MAX_WINDOWS; i++) {
     WindowManager_Single_Process(i);

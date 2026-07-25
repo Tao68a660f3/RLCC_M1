@@ -67,14 +67,17 @@ void App_Init() {
 
   // /* 初始化歌词窗口管理器 */
   // LyricWM_Init(LYRIC_LINE_COUNT);
+
+  /* 启动默认 UI 模式（HomeLife：大字时间 + 温湿度） */
+  UI_Manager_SetMode_HomeLife();
 }
 
 void App_Loop() {
   /* 1. 后台静默运行（微秒级，只管在后台采数据和监控健康度） */
   IR_Control();
 
-  UI_Manager_Tick();
   Env_Manager_Tick();
+  UI_Manager_Tick();
 
   // /* 1b. 串口数据消费（根据系统模式选择文本/协议模式） */
   // if (g_curr_sys_mode == SYS_MODE_PROTOCOL_MODE) {
