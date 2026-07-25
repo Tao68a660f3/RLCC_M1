@@ -54,7 +54,7 @@ void App_Init() {
   W25Q64_Init(&hspi1);
   Font_Config_Init();
 
-  Font_Select_ASC(FONT_ASC_1608);
+  Font_Select_ASC(FONT_ASC_16S);
   Font_Select_GBK(FONT_GBK_1616S);
 
   LED_Init(&htim1);

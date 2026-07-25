@@ -203,6 +203,7 @@ void Window_FillText(uint8_t win_idx, const char *str, CanvasColor color,
     }
     win->canvas = new_canvas;
   }
+  win->y_offset = (win->h - win->canvas.height) / 2;
 }
 
 // ============================================================================

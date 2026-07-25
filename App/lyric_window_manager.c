@@ -67,7 +67,7 @@ void LyricWM_Reset(void) {
     l_win_cfg[i].last_line_index = 0xFFFF; // 重置行号记录
 
     // 顺便把物理窗口清空（黄底色 → CANVAS_Y）
-    Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_TOP);
+    Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
     LED_Window *win = &window_list[l_win_cfg[i].win_idx];
     win->x_offset = 0;
   }
@@ -76,8 +76,20 @@ void LyricWM_Reset(void) {
 
 /**
  * @brief 从系统状态结构体中计算当前播放的绝对时间 (ms)
+ *
+ * 平滑策略 (EWMA 低通滤波):
+ *   - raw = remote_time_ms + (HAL_GetTick() - local_record_tick)
+ *   - 当 raw > smooth 时: step = (raw - smooth) / 8，最少 1ms
+ *   - 当 raw <= smooth 时: 不后退，仅前进 1ms
+ *
+ * 效果:
+ *   - 正常播放时几乎无延迟跟随
+ *   - 200ms 的 sync 跳变约 8 帧 (~250ms) 平滑吸收
+ *   - 时间永不后退 (单调递增)
  */
 uint32_t Get_Current_PlayTime(void) {
+  static uint32_t s_smooth = 0;
+
   // 如果从未收到过同步包，或者 local_record_tick 尚未初始化
   if (g_sys.local_record_tick == 0) {
     return 0;
@@ -85,12 +97,52 @@ uint32_t Get_Current_PlayTime(void) {
 
   // 如果当前处于暂停状态，时间不再随系统 Tick 累加
   if (!g_sys.is_playing) {
+    s_smooth = g_sys.remote_time_ms;
     return g_sys.remote_time_ms;
   }
 
-  // 计算逻辑：PC最后一次同步的时间 + (当前运行时间 - 同步时的运行时间)
-  uint32_t tick_diff = HAL_GetTick() - g_sys.local_record_tick;
-  return g_sys.remote_time_ms + tick_diff;
+  // 原始计算 (PC 推算)
+  uint32_t raw =
+      g_sys.remote_time_ms + (HAL_GetTick() - g_sys.local_record_tick);
+
+  // 首次调用：直接初始化
+  if (s_smooth == 0) {
+    s_smooth = raw;
+    return raw;
+  }
+
+// seek 检测阈值 (ms)：超过此值视为用户拖拽进度，立即跟随
+#define SEEK_THRESHOLD_MS 300
+
+  // EWMA 一阶低通
+  if (raw > s_smooth) {
+    uint32_t delta = raw - s_smooth;
+    if (delta > SEEK_THRESHOLD_MS) {
+      // 用户向前拖拽进度，直接跳转
+      s_smooth = raw;
+    } else {
+      // 微小漂移/抖动：EWMA 平滑跟随
+      uint32_t step = (delta + 4) / 8; // delta/8 向上取整
+      if (step < 1)
+        step = 1;
+      if (step > delta)
+        step = delta; // 防止过冲
+      s_smooth += step;
+    }
+  } else {
+    uint32_t delta = s_smooth - raw;
+    if (delta > SEEK_THRESHOLD_MS) {
+      // 用户向后拖拽进度，直接跳转
+      s_smooth = raw;
+    } else {
+      // 微小倒退：视为时钟噪声，以 1ms/帧 缓慢前进（保持单调）
+      s_smooth += 1;
+    }
+  }
+
+#undef SEEK_THRESHOLD_MS
+
+  return s_smooth;
 }
 
 /**
@@ -252,8 +304,16 @@ static void _RecalcOffsetYByTimeOrder(void) {
       continue;
 
     // 在 sorted_lyrics 中查找该窗口绑定的 LyricArea 的位置
-    // 用 line_index 作为排序键（单调递增）
-    sort_key[active_count] = cfg->bound_area->line_index;
+    // 直接用 sorted_lyrics 下标作为排序键，继承 _Lyric_UpdateSortedArray
+    // 的完整顺序
+    uint32_t pos = 0xFFFFFFFF;
+    for (uint32_t i = 0; i < g_sys.active_count; i++) {
+      if (g_sys.sorted_lyrics[i] == cfg->bound_area) {
+        pos = i;
+        break;
+      }
+    }
+    sort_key[active_count] = pos;
     active_idx[active_count] = w;
     active_count++;
   }
@@ -367,7 +427,7 @@ void LyricWM_Process(void) {
         CanvasMode cm = _ColorToCanvasMode(cfg->color_base);
 
         // 第一步：清除旧内容（清空画布，模式与底色保持一致）
-        Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_TOP);
+        Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_MIDDLE);
 
         // 第二步：（移动窗口——在 _RecalcOffsetYByTimeOrder 中统一处理）
 
@@ -376,7 +436,7 @@ void LyricWM_Process(void) {
           _Lyric_MeasureVerbatim(target_area);
 
         Window_FillText(cfg->win_idx, target_area->text, cfg->color_base, cm,
-                        VALIGN_TOP);
+                        VALIGN_MIDDLE);
 
         cfg->bound_area = target_area;
         cfg->last_line_index = target_area->line_index;
