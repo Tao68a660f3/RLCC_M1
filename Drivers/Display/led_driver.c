@@ -105,12 +105,22 @@ void LED_ClearAreaAllBuffers(int16_t x, int16_t y, uint16_t w, uint16_t h) {
     for (uint16_t row = y; row < y + h; row++) {
       uint8_t r = row % 16;
       uint8_t q = row / 16;
-      uint8_t r_bit = (uint8_t)(1 << (q * 2));
-      uint8_t g_bit = (uint8_t)(2 << (q * 2));
-      uint8_t clr_mask = (uint8_t)(r_bit | g_bit);
+      uint8_t clr = (uint8_t)((1 << (q * 2)) | (2 << (q * 2)));
+      uint8_t *p = &frame_buffer[buf][r][(uint16_t)x];
 
-      for (uint16_t col = (uint16_t)x; col < x + w; col++) {
-        frame_buffer[buf][r][col] |= clr_mask;
+      uint16_t col = 0;
+      // 4 字节对齐头
+      while (col < w && ((uint32_t)&p[col] & 3)) {
+        p[col++] |= clr;
+      }
+      // 32 位批量写
+      uint32_t clr32 = (uint32_t)clr * 0x01010101;
+      for (; col + 3 < w; col += 4) {
+        *(uint32_t *)&p[col] |= clr32;
+      }
+      // 尾部零头
+      for (; col < w; col++) {
+        p[col] |= clr;
       }
     }
   }

@@ -52,9 +52,11 @@ void LyricWM_Reset(void) {
     // 清除当前 write_idx 的 canvas 内容
     Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
 
-    // 清除双缓冲中此窗口物理区域的残留像素
+    // 清除双缓冲中此窗口物理区域的残留像素（含偏移叠加）
     LED_Window *win = &window_list[i];
-    LED_ClearAreaAllBuffers(win->x, win->y, win->w, win->h);
+    LED_ClearAreaAllBuffers(win->x + (int16_t)l_win_cfg[i].offset_x,
+                            win->y + (int16_t)l_win_cfg[i].offset_y, win->w,
+                            win->h);
 
     l_win_cfg[i].bound_area = NULL;        // 断开指针绑定
     l_win_cfg[i].last_line_index = 0xFFFF; // 重置行号记录
@@ -417,9 +419,12 @@ void LyricWM_Process(void) {
         // 第一步：清除旧内容（清空画布，模式与底色保持一致）
         Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_MIDDLE);
 
-        // 清除双缓冲中此窗口物理区域的残留像素
+        // 清除双缓冲中此窗口物理区域的残留像素（含旧偏移偏移，_RecalcOffsetYByTimeOrder
+        // 尚未更新）
         LED_Window *win = &window_list[cfg->win_idx];
-        LED_ClearAreaAllBuffers(win->x, win->y, win->w, win->h);
+        LED_ClearAreaAllBuffers(win->x + (int16_t)cfg->offset_x,
+                                win->y + (int16_t)cfg->offset_y, win->w,
+                                win->h);
 
         // 第二步：（移动窗口——在 _RecalcOffsetYByTimeOrder 中统一处理）
 
