@@ -65,8 +65,8 @@ void COM_Process_TextMode(void) {
     if (c == '\n' || c == '\r' || c == '\0') {
       if (cache_idx > 0) {
         line_cache[cache_idx] = '\0';
-        // --- 耗时操作：抛给 UI 层处理，DMA 后台继续存货 ---
-        UI_Manager_OnLineReceived(line_cache);
+        // --- 抛给 UI 层按当前模式分发，DMA 后台继续存货 ---
+        UI_Manager_OnTextLineReceived(line_cache);
         cache_idx = 0;
       }
       // 跳过 CR/LF 后面可能跟着的配对字符（如 \r\n 或 \n\r）
@@ -77,7 +77,7 @@ void COM_Process_TextMode(void) {
       } else {
         // cache 满了，强制切行，避免整行数据永久丢失
         line_cache[LINE_BUF_SIZE - 1] = '\0';
-        UI_Manager_OnLineReceived(line_cache);
+        UI_Manager_OnTextLineReceived(line_cache);
         cache_idx = 0;
         // 这个字符还没存进去，重试一次
         line_cache[cache_idx++] = (char)c;
@@ -126,4 +126,13 @@ void COM_Process_ProtocolMode(void) {
   }
 
   cmd_ready = 0;
+}
+
+/**
+ * @brief 发送数据到串口（阻塞发送，短包场景使用）
+ *        huart1 在 main.h 中有 extern，此处直接引用
+ */
+void COM_SendBytes(const uint8_t *data, uint16_t len) {
+  extern UART_HandleTypeDef huart1;
+  HAL_UART_Transmit(&huart1, data, len, HAL_MAX_DELAY);
 }

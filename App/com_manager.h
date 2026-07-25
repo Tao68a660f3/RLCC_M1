@@ -16,4 +16,7 @@ void COM_UART_IDLE_Callback(UART_HandleTypeDef *huart);
 void COM_Process_TextMode(void);
 void COM_Process_ProtocolMode(void);
 
+// 发送：将数据写入串口（阻塞发送，短包场景使用）
+void COM_SendBytes(const uint8_t *data, uint16_t len);
+
 #endif

@@ -4,6 +4,15 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// 颜色定义：使用位掩码，方便与运算
+// 00(黑), 01(红), 10(绿), 11(黄)
+typedef enum {
+  C_BLACK = 0x00,
+  C_RED = 0x01,
+  C_GREEN = 0x02,
+  C_YELLOW = 0x03
+} CanvasColor;
+
 // 画布内存模式：控制红绿色平面的分配策略
 typedef enum {
   CANVAS_RG, // 红 + 绿 两个独立平面 (当前行为)
@@ -32,6 +41,7 @@ typedef struct {
 } MemBlock;
 
 /* 基础 API */
+CanvasMode ColorToCanvasMode(CanvasColor color);
 void Pool_Init(void);
 CanvasHandle Pool_AllocCanvas(uint16_t w, uint16_t h, int16_t old_handle,
                               CanvasMode mode);

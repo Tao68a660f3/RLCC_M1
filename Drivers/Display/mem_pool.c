@@ -12,6 +12,25 @@ static uint16_t ring_ptr = 0; // 全局环形写指针
 static MemBlock block_table[MAX_BLOCKS];
 
 /**
+ * @brief 根据颜色选择对应的画布内存模式
+ *        CANVAS_R:  红色像素写入 r_ptr (形状掩码从 r_ptr 读)
+ *        CANVAS_G:  绿色像素写入 g_ptr (形状掩码从 g_ptr 读)
+ *        CANVAS_Y:  红绿共用同一平面 r_ptr==g_ptr
+ */
+CanvasMode ColorToCanvasMode(CanvasColor color) {
+  switch (color) {
+  case C_RED:
+    return CANVAS_R;
+  case C_GREEN:
+    return CANVAS_G;
+  case C_YELLOW:
+    return CANVAS_Y;
+  default:
+    return CANVAS_R;
+  }
+}
+
+/**
  * 初始化内存池：就像开学前清空教室所有的座位表。
  */
 void Pool_Init(void) {
@@ -88,7 +107,8 @@ CanvasHandle Pool_AllocCanvas(uint16_t w, uint16_t h, int16_t old_handle,
       // 检查区间重叠 (A < B_end && B < A_end)
       if (new_start < exist_end && exist_start < new_end) {
         //				printf("Ring Collision! Slot %d occupies
-        //%d-%d\n", i, 						exist_start, exist_end);
+        //%d-%d\n", i, 						exist_start,
+        // exist_end);
         // 方案：如果撞了，说明内存彻底满了，只能返回失败
         return handle;
       }

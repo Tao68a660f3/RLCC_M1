@@ -2,31 +2,14 @@
 #include "canvas_renderer.h"
 #include "flash_font.h"
 #include "lyric_service.h"
+#include "mem_pool.h"
 #include "stdio.h"
 #include "window_manager.h"
 #include <stdint.h>
 #include <string.h>
 
-// #define DEBUG_PRT
 
-/**
- * @brief 根据颜色选择对应的画布内存模式
- *        CANVAS_R:  红色像素写入 r_ptr (形状掩码从 r_ptr 读)
- *        CANVAS_G:  绿色像素写入 g_ptr (形状掩码从 g_ptr 读)
- *        CANVAS_Y:  红绿共用同一平面 r_ptr==g_ptr
- */
-static CanvasMode _ColorToCanvasMode(CanvasColor color) {
-  switch (color) {
-  case C_RED:
-    return CANVAS_R;
-  case C_GREEN:
-    return CANVAS_G;
-  case C_YELLOW:
-    return CANVAS_Y;
-  default:
-    return CANVAS_R;
-  }
-}
+// #define DEBUG_PRT
 
 extern volatile uint8_t need_commit;
 
@@ -425,7 +408,7 @@ void LyricWM_Process(void) {
       int target_w = _RecycleWindow(now);
       if (target_w != -1) {
         LyricWinConfig *cfg = &l_win_cfg[target_w];
-        CanvasMode cm = _ColorToCanvasMode(cfg->color_base);
+        CanvasMode cm = ColorToCanvasMode(cfg->color_base);
 
         // 第一步：清除旧内容（清空画布，模式与底色保持一致）
         Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_MIDDLE);
