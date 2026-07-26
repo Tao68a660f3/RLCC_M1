@@ -277,12 +277,6 @@ static void _Render_MetaRotation(void) {
   if (s_meta.pool_count == 0)
     return;
 
-  // 检查媒体是否更新
-  if (media_updated) {
-    media_updated = 0;
-    UI_Manager_OnMusicChanged();
-  }
-
   const char *curr_text = s_meta.items[s_meta.curr_idx].text;
   if (strlen(curr_text) == 0) {
     static char s_meta_cleared = 0;
@@ -446,7 +440,7 @@ void UI_Manager_SetMode_HomeLife(void) {
 
 void UI_Manager_NextUIMode(void) {
   UI_Mode_t next = g_curr_ui_mode + 1;
-  if (next > UI_MODE_1_LINE_BIG_FONT)
+  if (next > UI_MODE_HOME_LIFE)
     next = 0;
 
   switch (next) {
@@ -492,6 +486,9 @@ void UI_Manager_ToggleSysMode(void) {
 // ========== Tick：主循环唯一入口 ==========
 
 void UI_Manager_OnMusicChanged(void) {
+  // 注：歌词池（lyric_pool）以及时间轴已在
+  // Lyric_OnMetadataReceived() → LyricService_ClearPool() 中清空，
+  // 此处只做 UI 层面的重置
   LyricWM_Reset();
 
   if (g_curr_ui_mode == UI_MODE_MUSIC_INFO) {
@@ -526,6 +523,12 @@ void UI_Manager_Tick(void) {
   default:
     COM_Process_TextMode();
     break;
+  }
+
+  // Step 1.5: 公共媒体切换——切歌时清空歌词池、重置 LyricWM、刷新元数据
+  if (media_updated) {
+    media_updated = 0;
+    UI_Manager_OnMusicChanged();
   }
 
   // 息屏：跳过渲染和提交

@@ -328,6 +328,43 @@ static void _RecalcOffsetYByTimeOrder(void) {
   }
 }
 
+/** @brief 寻找显示起始点，每帧全量遍历计算 */
+static int _FindDisplayStartIdx(uint32_t now) {
+  for (int i = 0; i < g_sys.active_count; i++) {
+    LyricArea *a = g_sys.sorted_lyrics[i];
+
+    // case 1: 当前正在播放的行
+    if (now >= a->start_time_ms && now <= (a->start_time_ms + a->duration))
+      return i;
+
+    // case 2: 尚未到达的行 → 退 1 行重叠
+    if (now < a->start_time_ms)
+      return (i > 0) ? (i - 1) : 0;
+
+    // case 3: 当前行已过期，检查下一行是否需要提前切换
+    if (now > (a->start_time_ms + a->duration) &&
+        (i + 1) < g_sys.active_count) {
+      LyricArea *b = g_sys.sorted_lyrics[i + 1];
+      if (b->cmd == 0x13 && i + 2 < g_sys.active_count)
+        b = g_sys.sorted_lyrics[i + 2];
+      if (now + 1500 >= b->start_time_ms &&
+          b->start_time_ms > (a->start_time_ms + a->duration))
+        return i + 1;
+    }
+  }
+  return 0;
+}
+
+/** @brief 寻找当前播放区间内的歌词行作为进度基准 */
+static LyricArea *_FindActiveMain(uint32_t now) {
+  for (int i = 0; i < g_sys.active_count; i++) {
+    LyricArea *a = g_sys.sorted_lyrics[i];
+    if (now >= a->start_time_ms && now < (a->start_time_ms + a->duration))
+      return a;
+  }
+  return NULL;
+}
+
 void LyricWM_RenderMgr(void) {
   if (need_commit)
     return;
@@ -352,28 +389,12 @@ void LyricWM_Process(void) {
     l_win_cfg[w].is_occupied = 0;
 
   // --- 1. 寻找显示起始点 ---
-  int display_start_idx = 0;
-  for (int i = 0; i < g_sys.active_count; i++) {
-    LyricArea *a = g_sys.sorted_lyrics[i];
-    if (now > a->start_time_ms && now < (a->start_time_ms + a->duration)) {
-      display_start_idx = i;
-      break;
-    }
-    if (now + 1000 < a->start_time_ms) {
-      display_start_idx = (i > 0) ? (i - 1) : 0;
-      break;
-    }
-  }
+  int display_start_idx = _FindDisplayStartIdx(now);
+  if (display_start_idx == -1)
+    return;
 
-  // --- 2. 寻找全局进度基准 (active_main) ---
-  LyricArea *active_main = NULL;
-  for (int i = 0; i < g_sys.active_count; i++) {
-    LyricArea *a = g_sys.sorted_lyrics[i];
-    if (now >= a->start_time_ms && now < (a->start_time_ms + a->duration)) {
-      active_main = a;
-      break;
-    }
-  }
+  // --- 2. 寻找全局进度基准 ---
+  LyricArea *active_main = _FindActiveMain(now);
   g_lyric_progress = active_main
                          ? _Calculate_Mapped_Progress_Enhanced(
                                active_main, now - active_main->start_time_ms)

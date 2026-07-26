@@ -182,7 +182,7 @@ void Env_Manager_Tick(void) {
 
       snprintf(g_str_temp, sizeof(g_str_temp), "%2d.%d" CELSIUS, t_int, t_dec);
       snprintf(g_str_humi, sizeof(g_str_humi), "%2d%%", (int)hum);
-      printf("Temp: %.1f C | Hum: %.1f %%\r\n", temp, hum);
+      printf("report: Temp: %.1f C, Humi: %.1f %%\r\n", temp, hum);
 
       // 温度舒适度
       if (temp >= 18.0f && temp <= 26.0f)

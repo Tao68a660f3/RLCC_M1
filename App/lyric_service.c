@@ -9,6 +9,19 @@ uint8_t media_updated = 0;
 
 void LyricService_Init(void) { memset(&g_sys, 0, sizeof(g_sys)); }
 
+void LyricService_ClearPool(void) {
+  // 清空歌词池
+  memset(g_sys.lyric_pool, 0, sizeof(g_sys.lyric_pool));
+  memset(g_sys.sorted_lyrics, 0, sizeof(g_sys.sorted_lyrics));
+  g_sys.active_count = 0;
+
+  // 重置时间轴
+  g_sys.remote_time_ms = 0;
+  g_sys.local_record_tick = HAL_GetTick();
+
+  media_updated = 1;
+}
+
 static void _Lyric_UpdateSortedArray(void) {
   g_sys.active_count = 0;
 
@@ -99,17 +112,7 @@ void Lyric_OnMetadataReceived(uint8_t *payload, uint8_t len) {
     g_sys.album[a_len] = '\0';
   }
 
-  // 【核心】清空歌词池 (清空“隔夜菜”)
-  // 必须确保渲染器正在使用的 sorted_lyrics 也被同步重置
-  memset(g_sys.lyric_pool, 0, sizeof(g_sys.lyric_pool));
-  memset(g_sys.sorted_lyrics, 0, sizeof(g_sys.sorted_lyrics));
-  g_sys.active_count = 0;
-
-  // 3. 重置时间轴，防止新歌跳秒
-  g_sys.remote_time_ms = 0;
-  g_sys.local_record_tick = HAL_GetTick();
-
-  media_updated = 1;
+  LyricService_ClearPool();
 }
 
 // 0x11: 时间同步
