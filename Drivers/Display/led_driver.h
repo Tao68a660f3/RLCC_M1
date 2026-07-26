@@ -32,4 +32,7 @@ void LED_Clear(void);
 void LED_ClearAreaAllBuffers(int16_t x, int16_t y, uint16_t w, uint16_t h);
 void LED_Commit(void);
 
+/** 屏幕使能控制：enable=1 亮屏 (OE=0)，enable=0 灭屏 (OE=1) */
+void LED_SetScreenEnable(uint8_t enable);
+
 #endif

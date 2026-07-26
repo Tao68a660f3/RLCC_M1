@@ -4,7 +4,7 @@
 #include "main.h"
 #include <stdint.h>
 
-#define RX_BUF_SIZE 2048
+#define RX_BUF_SIZE 4096
 
 extern uint8_t rx_raw_buffer[RX_BUF_SIZE];
 extern volatile uint8_t cmd_ready;

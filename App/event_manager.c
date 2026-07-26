@@ -4,6 +4,10 @@
 #include "ui_manager.h"
 #include <stdio.h>
 
+// ====== IR 按键码 (定义于 ir_remote.h) ======
+// KEY_1~KEY_9, KEY_STAR, KEY_0, KEY_POUND
+// KEY_UP, KEY_DOWN, KEY_LEFT, KEY_OK, KEY_RIGHT
+
 // ====== 协议模式 — 播放控制 Slot ======
 static void Slot_Playback_Next(void) {
   // 下一曲: AB A1 00 00
@@ -45,48 +49,55 @@ typedef struct {
 
 // ====== 协议模式绑定表（21个按键全分配）======
 static const IR_Binding_t protocol_bindings[] = {
-    // 数字键 → 5种UI模式
-    {0x45, UI_Manager_SetMode_2Line},     // 1
-    {0x46, UI_Manager_SetMode_1LineMid},  // 2
-    {0x47, UI_Manager_SetMode_1LineBig},  // 3
-    {0x44, UI_Manager_SetMode_MusicInfo}, // 4
-    {0x40, UI_Manager_SetMode_HomeLife},  // 5
+    // 数字键
+    {KEY_0, UI_Manager_ToggleScreen},      // 0 → 息屏/亮屏
+    {KEY_1, UI_Manager_SetMode_2Line},     // 1
+    {KEY_2, UI_Manager_SetMode_1LineMid},  // 2
+    {KEY_3, UI_Manager_SetMode_1LineBig},  // 3
+    {KEY_4, UI_Manager_SetMode_MusicInfo}, // 4
+    {KEY_5, UI_Manager_SetMode_HomeLife},  // 5
     // 功能键
-    {0x16, UI_Manager_NextUIMode},    // * → 循环切换UI模式
-    {0x0d, UI_Manager_ToggleSysMode}, // # → 切换系统模式
+    {KEY_STAR, UI_Manager_NextUIMode},     // * → 循环切换UI模式
+    {KEY_POUND, UI_Manager_ToggleSysMode}, // # → 切换系统模式
     // 方向键 → 播放控制
-    {0x18, Slot_Playback_Rewind},      // 上 → 快退
-    {0x52, Slot_Playback_FastForward}, // 下 → 快进
-    {0x08, Slot_Playback_Prev},        // 左 → 上一曲
-    {0x5a, Slot_Playback_Next},        // 右 → 下一曲
-    {0x1c, Slot_Playback_PlayPause},   // OK → 播放/暂停
+    {KEY_UP, Slot_Playback_Rewind},        // 上 → 快退
+    {KEY_DOWN, Slot_Playback_FastForward}, // 下 → 快进
+    {KEY_LEFT, Slot_Playback_Prev},        // 左 → 上一曲
+    {KEY_RIGHT, Slot_Playback_Next},       // 右 → 下一曲
+    {KEY_OK, Slot_Playback_PlayPause},     // OK → 播放/暂停
 };
 static const uint8_t protocol_bindings_cnt =
     sizeof(protocol_bindings) / sizeof(IR_Binding_t);
 
 // ====== 文本模式绑定表 =======
 static const IR_Binding_t text_bindings[] = {
-    // 数字键 → 5种UI模式
-    {0x45, UI_Manager_SetMode_2Line},    // 1
-    {0x46, UI_Manager_SetMode_1LineMid}, // 2
-    {0x47, UI_Manager_SetMode_1LineBig}, // 3
-    {0x44, UI_Manager_SetMode_HomeLife}, // 4
-    {0x40, UI_Manager_SetMode_HomeLife}, // 5
+    // 数字键
+    {KEY_0, UI_Manager_ToggleScreen},     // 0 → 息屏/亮屏
+    {KEY_1, UI_Manager_SetMode_2Line},    // 1
+    {KEY_2, UI_Manager_SetMode_1LineMid}, // 2
+    {KEY_3, UI_Manager_SetMode_1LineBig}, // 3
+    {KEY_4, UI_Manager_SetMode_HomeLife}, // 4
+    {KEY_5, UI_Manager_SetMode_HomeLife}, // 5
     // 功能键
-    {0x16, UI_Manager_NextUIMode},    // * → 循环切换UI模式
-    {0x0d, UI_Manager_ToggleSysMode}, // # → 切换系统模式
+    {KEY_STAR, UI_Manager_NextUIMode},     // * → 循环切换UI模式
+    {KEY_POUND, UI_Manager_ToggleSysMode}, // # → 切换系统模式
     // 方向键 → 上位机请求
-    {0x18, Slot_HostReq_1}, // 上
-    {0x52, Slot_HostReq_2}, // 下
-    {0x08, Slot_HostReq_3}, // 左
-    {0x5a, Slot_HostReq_4}, // 右
-    {0x1c, Slot_HostReq_5}, // OK
+    {KEY_UP, Slot_HostReq_1},    // 上
+    {KEY_DOWN, Slot_HostReq_2},  // 下
+    {KEY_LEFT, Slot_HostReq_3},  // 左
+    {KEY_RIGHT, Slot_HostReq_4}, // 右
+    {KEY_OK, Slot_HostReq_5},    // OK
 };
 static const uint8_t text_bindings_cnt =
     sizeof(text_bindings) / sizeof(IR_Binding_t);
 
 // event管家处理
 void Event_Dispatch_IR(uint8_t cmd) {
+  // 非屏幕切换键 → 息屏状态下按任意键先唤醒屏幕
+  if (cmd != KEY_0) {
+    UI_Manager_WakeScreen();
+  }
+
   const IR_Binding_t *target_table;
   uint8_t table_size;
 

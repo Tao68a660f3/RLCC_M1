@@ -46,4 +46,12 @@ void UI_Manager_OnLineReceived_Single(const char *text, CanvasColor color);
 // 通用文本行入口：COM 层拆包后调用，内部按 g_curr_ui_mode 自动分发
 void UI_Manager_OnTextLineReceived(const char *text);
 
+// ====== 息屏控制 ======
+/** 切换息屏/亮屏 */
+void UI_Manager_ToggleScreen(void);
+/** 返回当前是否息屏 */
+uint8_t UI_Manager_IsScreenOff(void);
+/** 唤醒屏幕（息屏状态下按任意键时调用） */
+void UI_Manager_WakeScreen(void);
+
 #endif

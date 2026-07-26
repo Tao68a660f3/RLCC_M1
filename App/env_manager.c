@@ -2,6 +2,7 @@
 #include "i2c.h"
 #include "lyric_service.h"
 #include "rtc.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -147,8 +148,8 @@ void Env_Manager_Tick(void) {
 
     g_sys.rtc_dirty = 0;
 
-    printf("[RTC] Time Sync Applied: %04d-%02d-%02d\r\n", sync_time.year,
-           sync_time.month, sync_time.day);
+    // printf("[RTC] Time Sync Applied: %04d-%02d-%02d\r\n", sync_time.year,
+    //  sync_time.month, sync_time.day);
   }
 
   // --- 2. RTC 定时读取 (每 250ms 读一次) ---
@@ -172,7 +173,8 @@ void Env_Manager_Tick(void) {
   // --- 3. AHT30 数据读取（每 3s 取一次最新值）---
   if (now - last_aht_trigger_tick > 3000) {
     float temp = 0.0f, hum = 0.0f;
-    if (AHT30_Get_SafeData(&s_haht30, &temp, &hum)) {
+    uint8_t aht_ok = AHT30_Get_SafeData(&s_haht30, &temp, &hum);
+    if (aht_ok) {
       int t_int = (int)temp;
       int t_dec = (int)(temp * 10) % 10;
       if (t_dec < 0)
@@ -180,6 +182,7 @@ void Env_Manager_Tick(void) {
 
       snprintf(g_str_temp, sizeof(g_str_temp), "%2d.%d" CELSIUS, t_int, t_dec);
       snprintf(g_str_humi, sizeof(g_str_humi), "%2d%%", (int)hum);
+      printf("Temp: %.1f C | Hum: %.1f %%\r\n", temp, hum);
 
       // 温度舒适度
       if (temp >= 18.0f && temp <= 26.0f)
@@ -196,6 +199,9 @@ void Env_Manager_Tick(void) {
         g_humi_comfort = COMFORT_YELLOW;
       else
         g_humi_comfort = COMFORT_RED;
+    } else {
+      strcpy(g_str_temp, "--.-" CELSIUS);
+      strcpy(g_str_humi, "--%");
     }
     last_aht_trigger_tick = now;
   }

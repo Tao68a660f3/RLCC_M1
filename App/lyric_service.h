@@ -4,10 +4,10 @@
 #include "main.h"
 #include <stdint.h>
 
-#define MAX_METADATA_STR_LEN 144
-#define LYRIC_POOL_SIZE 4     // 环形歌词池大小
-#define MAX_WORDS_PER_LINE 72 // 逐字词数上限
-#define LYRIC_TEXT_SIZE 320   // 单行文本缓冲区
+#define MAX_METADATA_STR_LEN 256 // 元数据字符串上限
+#define LYRIC_POOL_SIZE 4        // 环形歌词池大小
+#define MAX_WORDS_PER_LINE 128   // 逐字词数上限
+#define LYRIC_TEXT_SIZE 512      // 单行文本缓冲区
 
 // 逐字歌词结构
 typedef struct {

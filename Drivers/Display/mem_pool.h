@@ -21,8 +21,8 @@ typedef enum {
   CANVAS_Y   // 红绿共用一平面 (纯黄模式), r_ptr = g_ptr
 } CanvasMode;
 
-#define POOL_SIZE 16384 // 静态内存池
-#define MAX_BLOCKS 12   // 最大同时存在的内存块数量
+#define POOL_SIZE 24576 // 静态内存池 (16K → 24K)
+#define MAX_BLOCKS 20   // 最大同时存在的内存块数量 (12 → 20)
 
 // 内存块句柄：应用层操作内容的凭证
 typedef struct {

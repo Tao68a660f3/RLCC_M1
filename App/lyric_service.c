@@ -195,6 +195,37 @@ void Lyric_OnContentReceived(uint8_t cmd, uint8_t *payload, uint8_t len) {
     if (txt_pos < LYRIC_TEXT_SIZE)
       slot->text[txt_pos] = '\0';
 
+  } else if (cmd == 0x15) { // 增强原文行:
+                            // [Index:2B][StartTime:4B][EndTime:4B][Text...]
+    uint32_t end_time = *(uint32_t *)&payload[6];
+    if (end_time > start_time)
+      slot->duration = end_time - start_time;
+    else
+      slot->duration = 4000; // 兜底
+
+    uint8_t txt_offset = 10;
+    uint32_t txt_len = (len > txt_offset) ? (len - txt_offset) : 0;
+
+    if (txt_len >= LYRIC_TEXT_SIZE)
+      txt_len = LYRIC_TEXT_SIZE - 1;
+
+    memcpy(slot->text, &payload[txt_offset], txt_len);
+    slot->text[txt_len] = '\0';
+    slot->word_count = 0;
+
+  } else if (cmd == 0x16) { // 纯文本: 填默认值
+    slot->line_index = 0;
+    slot->start_time_ms = g_sys.remote_time_ms;
+    slot->duration = 5000;
+    slot->word_count = 0;
+
+    uint32_t txt_len = (len > 0) ? len : 0;
+    if (txt_len >= LYRIC_TEXT_SIZE)
+      txt_len = LYRIC_TEXT_SIZE - 1;
+
+    memcpy(slot->text, &payload[0], txt_len);
+    slot->text[txt_len] = '\0';
+
   } else { // 0x12 (原文) 或 0x13 (翻译)
     // 修正：C# data[9] 开始是文本，对应 payload[6]
     uint8_t txt_offset = 6;

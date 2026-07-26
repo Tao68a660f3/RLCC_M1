@@ -57,7 +57,7 @@ void App_Init() {
   WindowManager_Init();
 
   Window_Config(0, 0, 0, 192, 16);
-  Window_Config(1, 0, 24, 192, 8);
+  Window_Config(1, 0, 16, 192, 16);
   Window_FillText(0, Msg_01, C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
   Window_SetAlignment(0, ALIGN_CENTER);
   for (uint8_t j = 0; j < 2; j++) {
@@ -66,7 +66,6 @@ void App_Init() {
     WindowManager_Process();
   }
   HAL_Delay(500);
-  Font_Select_ASC(FONT_ASC_0805);
   Window_FillText(1, Msg_02, C_GREEN, CANVAS_G, VALIGN_MIDDLE);
   Window_SetAlignment(1, ALIGN_CENTER);
   for (uint8_t j = 0; j < 2; j++) {

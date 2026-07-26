@@ -15,6 +15,9 @@
 UI_Mode_t g_curr_ui_mode = UI_MODE_2_Line;
 Sys_Mode_t g_curr_sys_mode = SYS_MODE_PROTOCOL_MODE;
 
+/** 息屏标志：1=熄灭，0=亮屏 */
+static uint8_t s_screen_off = 0;
+
 // 每个模式默认的字体配置（渲染时使用，模式内部可临时切换）
 typedef struct {
   uint8_t font_asc; // ASCII 字体序号
@@ -497,8 +500,22 @@ void UI_Manager_OnMusicChanged(void) {
   }
 }
 
+void UI_Manager_ToggleScreen(void) {
+  s_screen_off = !s_screen_off;
+  LED_SetScreenEnable(!s_screen_off);
+}
+
+uint8_t UI_Manager_IsScreenOff(void) { return s_screen_off; }
+
+void UI_Manager_WakeScreen(void) {
+  if (s_screen_off) {
+    s_screen_off = 0;
+    LED_SetScreenEnable(1);
+  }
+}
+
 void UI_Manager_Tick(void) {
-  // Step 1: COM 数据消费
+  // Step 1: COM 数据消费（息屏时照常运行，不丢数据）
   switch (g_curr_sys_mode) {
   case SYS_MODE_TXT_MODE:
     COM_Process_TextMode();
@@ -510,6 +527,10 @@ void UI_Manager_Tick(void) {
     COM_Process_TextMode();
     break;
   }
+
+  // 息屏：跳过渲染和提交
+  if (s_screen_off)
+    return;
 
   // Step 2: 模式专属渲染 Tick
   switch (g_curr_ui_mode) {

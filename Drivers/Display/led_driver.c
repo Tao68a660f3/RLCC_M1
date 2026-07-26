@@ -7,6 +7,9 @@
 volatile uint8_t need_commit = 1;
 volatile uint8_t flush_counter = 0;
 
+/** 屏幕使能标志：1=亮屏，0=灭屏（中断中据此控制 OE） */
+static uint8_t s_led_enabled = 1;
+
 // 1. 显存定义：双缓冲
 uint8_t frame_buffer[2][SCAN_ROWS][DRIVER_WIDTH] __attribute__((aligned(4)));
 static volatile uint8_t read_idx = 0;
@@ -165,11 +168,13 @@ void LED_IRQHandler_Logic(void) {
   p_htim->Instance->SR = 0;
   p_htim->Instance->CNT = 0;
 
-  // 亮屏并启动硬件
+  // 启动硬件
   for (volatile int i = 0; i < 20; i++)
     ; // 等待 ABCD 地址线稳定
   p_htim->Instance->CR1 |= TIM_CR1_CEN;
-  LED_EN_GPIO_Port->BSRR = (uint32_t)LED_EN_Pin << 16; // OE=0
+  if (s_led_enabled)
+    LED_EN_GPIO_Port->BSRR = (uint32_t)LED_EN_Pin << 16; // OE=0 亮屏
+  // else: OE 保持高电平，屏幕消隐
 }
 
 void LED_Init(TIM_HandleTypeDef *htim) {
@@ -207,4 +212,15 @@ void LED_Init(TIM_HandleTypeDef *htim) {
 
   // 初始保持消隐
   HAL_GPIO_WritePin(LED_EN_GPIO_Port, LED_EN_Pin, GPIO_PIN_SET);
+}
+
+void LED_SetScreenEnable(uint8_t enable) {
+  s_led_enabled = enable;
+  // if (enable) {
+  //   // OE=0 → 亮屏
+  //   LED_EN_GPIO_Port->BSRR = (uint32_t)LED_EN_Pin << 16;
+  // } else {
+  //   // OE=1 → 灭屏
+  //   LED_EN_GPIO_Port->BSRR = LED_EN_Pin;
+  // }
 }

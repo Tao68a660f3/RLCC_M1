@@ -4,7 +4,14 @@
 
 // #define DEBUG_PRT
 
-typedef enum { ST_IDLE = 0, ST_CMD, ST_LEN, ST_PAYLOAD, ST_CHECK } ParseState;
+typedef enum {
+  ST_IDLE = 0,
+  ST_CMD,
+  ST_LEN,
+  ST_PAYLOAD,
+  ST_CHECK,
+  ST_ERROR
+} ParseState;
 
 static ParseState current_state = ST_IDLE;
 static uint8_t calc_checksum = 0;
@@ -17,32 +24,37 @@ void Protocol_Init(void) {
 }
 
 uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
+  // 错误态：只有 0xAA 能重置，避免错位
+  if (current_state == ST_ERROR) {
+    if (byte == 0xAA) {
+      current_state = ST_CMD;
+      calc_checksum = 0;
+    }
+    return 0;
+  }
+
   switch (current_state) {
   case ST_IDLE:
     if (byte == 0xAA) {
       current_state = ST_CMD;
       calc_checksum = 0;
-      return 0;
     }
     break;
 
   case ST_CMD:
     out_pkt->cmd = byte;
-    // 暂时不校验
-    // calc_checksum ^= byte;
     current_state = ST_LEN;
     break;
 
   case ST_LEN:
-    out_pkt->len = byte;
-    // 暂时不校验
-    // calc_checksum ^= byte;
-    payload_cnt = 0;
-    if (out_pkt->len == 0) {
-      current_state = ST_CHECK;
-    } else {
-      current_state = ST_PAYLOAD;
+    // 长度超限 → 错误态，防止写爆 payload
+    if (byte > MAX_PAYLOAD_SIZE) {
+      current_state = ST_ERROR;
+      return 0;
     }
+    out_pkt->len = byte;
+    payload_cnt = 0;
+    current_state = (byte == 0) ? ST_CHECK : ST_PAYLOAD;
     break;
 
   case ST_PAYLOAD:
@@ -55,11 +67,13 @@ uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
 
   case ST_CHECK:
     current_state = ST_IDLE;
-    // 校验成功返回 1
     if (byte == calc_checksum) {
+      // 为字符串补齐结束符，确保安全
+      out_pkt->payload[out_pkt->len] = '\0';
       return 1;
+    } else {
+      current_state = ST_ERROR;
     }
-    // 校验失败，该包被丢弃
     break;
   }
   return 0;
@@ -149,6 +163,8 @@ void Protocol_Dispatcher(ProtocolPacket *pkt) {
   case 0x12:
   case 0x13:
   case 0x14:
+  case 0x15:
+  case 0x16:
     Lyric_OnContentReceived(pkt->cmd, pkt->payload, pkt->len);
     break;
   case 0x20:

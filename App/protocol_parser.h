@@ -3,11 +3,13 @@
 
 #include "main.h"
 
-// 协议包结构体：最大负载 512 字节
+#define MAX_PAYLOAD_SIZE 1024
+
+// 协议包结构体
 typedef struct {
   uint8_t cmd;
   uint8_t len;
-  uint8_t payload[512];
+  uint8_t payload[MAX_PAYLOAD_SIZE];
   uint8_t checksum;
 } ProtocolPacket;
 
