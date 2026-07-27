@@ -228,7 +228,12 @@ static void _Meta_RenderToWin(uint8_t idx) {
 
   LED_Window *win = &window_list[2];
   uint8_t needs_scroll = (win->canvas.width > win->w);
-  Window_SetAlignment(2, needs_scroll ? ALIGN_LEFT : ALIGN_CENTER);
+  // Window_SetAlignment(2, needs_scroll ? ALIGN_LEFT : ALIGN_CENTER);
+  if (needs_scroll) {
+    win->x_offset = win->w;
+  } else {
+    Window_SetAlignment(2, ALIGN_CENTER);
+  }
   win->scroll_divider = needs_scroll ? 1 : 0;
   win->scroll_step = needs_scroll ? -1 : 0;
   win->scroll_counter = 0;
@@ -299,7 +304,7 @@ static void _Render_MetaRotation(void) {
   if (win->scroll_divider == 0) {
     do_switch = (elapsed >= 10000); // 居中不滚动 → 10 秒超时切换
   } else {
-    do_switch = (win->scroll_counter >= 2); // 滚动 → 2 轮后切换
+    do_switch = (win->scroll_counter >= 3); // 滚动 → 2 轮后切换
   }
 
   if (do_switch) {
@@ -448,8 +453,10 @@ void UI_Manager_NextUIMode(void) {
     UI_Manager_SetMode_2Line();
     break;
   case UI_MODE_MUSIC_INFO:
-    UI_Manager_SetMode_MusicInfo();
-    break;
+    if (g_curr_sys_mode == SYS_MODE_PROTOCOL_MODE) {
+      UI_Manager_SetMode_MusicInfo();
+      break;
+    }
   case UI_MODE_HOME_LIFE:
     UI_Manager_SetMode_HomeLife();
     break;
@@ -473,6 +480,9 @@ void UI_Manager_SetSysMode(Sys_Mode_t mode) {
     UI_Manager_SetMode_2Line();
   } else {
     LyricWM_Reset();
+  }
+  if (g_curr_ui_mode == UI_MODE_MUSIC_INFO) {
+    UI_Manager_SetMode_HomeLife();
   }
 }
 

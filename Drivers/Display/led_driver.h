@@ -37,5 +37,7 @@ void LED_SetScreenEnable(uint8_t enable);
 
 /** 设置屏幕亮度 0~100 (0=灭, 100=最亮) */
 void LED_SetBrightness(uint8_t brightness);
+/** 切换屏幕亮度 10~30 */
+void LED_SwitchBrightness();
 
 #endif

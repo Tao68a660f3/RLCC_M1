@@ -1,6 +1,7 @@
 #include "event_manager.h"
 #include "com_manager.h"
 #include "ir_remote.h"
+#include "led_driver.h"
 #include "ui_manager.h"
 #include <stdio.h>
 
@@ -57,6 +58,7 @@ static const IR_Binding_t protocol_bindings[] = {
     {KEY_4, UI_Manager_SetMode_MusicInfo}, // 4
     {KEY_5, UI_Manager_SetMode_HomeLife},  // 5
     // 功能键
+    {KEY_7, LED_SwitchBrightness},         // 7 → 调整屏幕亮度
     {KEY_STAR, UI_Manager_NextUIMode},     // * → 循环切换UI模式
     {KEY_POUND, UI_Manager_ToggleSysMode}, // # → 切换系统模式
     // 方向键 → 播放控制
@@ -79,6 +81,7 @@ static const IR_Binding_t text_bindings[] = {
     {KEY_4, UI_Manager_SetMode_HomeLife}, // 4
     {KEY_5, UI_Manager_SetMode_HomeLife}, // 5
     // 功能键
+    {KEY_7, LED_SwitchBrightness},         // 7 → 调整屏幕亮度
     {KEY_STAR, UI_Manager_NextUIMode},     // * → 循环切换UI模式
     {KEY_POUND, UI_Manager_ToggleSysMode}, // # → 切换系统模式
     // 方向键 → 上位机请求

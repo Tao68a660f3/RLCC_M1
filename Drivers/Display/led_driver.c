@@ -1,9 +1,10 @@
 #include "led_driver.h"
 #include "main.h"
 #include "system_utils.h"
+#include <stdint.h>
 #include <string.h>
 
-#define FLUSH_DIV 4
+#define FLUSH_DIV 5
 
 volatile uint8_t need_commit = 1;
 volatile uint8_t flush_counter = 0;
@@ -283,4 +284,13 @@ void LED_SetBrightness(uint8_t brightness) {
   if (brightness > 100)
     brightness = 100;
   s_brightness = brightness;
+}
+
+void LED_SwitchBrightness() {
+  static uint8_t sw_brightness = 30;
+  if (sw_brightness > 30) {
+    sw_brightness = 10;
+  }
+  LED_SetBrightness(sw_brightness);
+  sw_brightness += 10;
 }
