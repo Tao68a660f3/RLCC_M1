@@ -54,6 +54,7 @@ void App_Init() {
   Font_Select_GBK(FONT_GBK_1616H);
 
   LED_Init(&htim1);
+  LED_SetBrightness(30);
   WindowManager_Init();
 
   Window_Config(0, 0, 0, 192, 16);

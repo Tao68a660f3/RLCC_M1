@@ -54,7 +54,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 # 1. 自动搜寻指定目录下的所有源文件
 file(GLOB_RECURSE USER_SOURCES 
-    "Drivers/BSP/*.c"
+    "Drivers/BSP/MAIN/*.c"
     "Drivers/Board/*.c"
     "Drivers/Display/*.c"
     "App/*.c"

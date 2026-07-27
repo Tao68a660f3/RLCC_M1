@@ -1,14 +1,23 @@
 #include "led_driver.h"
 #include "main.h"
+#include "system_utils.h"
 #include <string.h>
 
-#define FLUSH_DIV 2
+#define FLUSH_DIV 4
 
 volatile uint8_t need_commit = 1;
 volatile uint8_t flush_counter = 0;
 
 /** 屏幕使能标志：1=亮屏，0=灭屏（中断中据此控制 OE） */
 static uint8_t s_led_enabled = 1;
+
+/** 亮度 0~100（0=灭, 100=最亮） */
+static uint8_t s_brightness = 100;
+
+/* ── DWT 自适应行周期测量 ────────────────────────── */
+static uint32_t s_prev_cyccnt = 0;
+static uint32_t s_row_cycle_cycles = 0;
+static uint8_t s_meas_ready = 0;
 
 // 1. 显存定义：双缓冲
 uint8_t frame_buffer[2][SCAN_ROWS][DRIVER_WIDTH] __attribute__((aligned(4)));
@@ -137,6 +146,15 @@ void LED_Commit(void) {
 }
 
 void LED_IRQHandler_Logic(void) {
+  /* ── DWT 实测行周期（自适应，无需硬编码） ── */
+  uint32_t now = DWT->CYCCNT;
+  if (s_meas_ready) {
+    s_row_cycle_cycles = now - s_prev_cyccnt;
+  } else {
+    s_meas_ready = 1; // 第一行不调光，之后才启用
+  }
+  s_prev_cyccnt = now;
+
   // 消隐 (OE=1)
   LED_EN_GPIO_Port->BSRR = LED_EN_Pin;
 
@@ -172,9 +190,25 @@ void LED_IRQHandler_Logic(void) {
   for (volatile int i = 0; i < 20; i++)
     ; // 等待 ABCD 地址线稳定
   p_htim->Instance->CR1 |= TIM_CR1_CEN;
-  if (s_led_enabled)
-    LED_EN_GPIO_Port->BSRR = (uint32_t)LED_EN_Pin << 16; // OE=0 亮屏
-  // else: OE 保持高电平，屏幕消隐
+  if (!s_led_enabled)
+    return; // 灭屏：OE 保持高电平，不亮
+
+  /* ── TIM2 硬件单次定时器调节 OE 占空比（完全非阻塞） ── */
+  // 先停止 TIM2（防止上一行残留）
+  TIM2->CR1 &= ~TIM_CR1_CEN;
+  TIM2->SR = 0;
+
+  if (s_brightness >= 100) {
+    // 100% 亮度：全行发光，不启动 TIM2
+    LED_EN_GPIO_Port->BSRR = (uint32_t)LED_EN_Pin << 16; // OE=0
+  } else if (s_brightness > 0) {
+    // 部分亮度：OE=0 亮屏，同时启动 TIM2，到期自动关闭 OE
+    TIM2->ARR = (uint32_t)((uint64_t)s_row_cycle_cycles * s_brightness / 100);
+    TIM2->CNT = 0;
+    LED_EN_GPIO_Port->BSRR = (uint32_t)LED_EN_Pin << 16; // OE=0
+    TIM2->CR1 |= TIM_CR1_CEN;                            // 启动计时
+  }
+  // brightness == 0: OE 保持高电平（上一步消隐状态），全灭
 }
 
 void LED_Init(TIM_HandleTypeDef *htim) {
@@ -212,6 +246,26 @@ void LED_Init(TIM_HandleTypeDef *htim) {
 
   // 初始保持消隐
   HAL_GPIO_WritePin(LED_EN_GPIO_Port, LED_EN_Pin, GPIO_PIN_SET);
+
+  /* ── TIM2 运行时重配：用于 OE 硬件单次调光 ──
+   *
+   * ⚠ 注意：下面的寄存器配置会覆盖 CubeMX 在 tim.c 中 MX_TIM2_Init() 设置的
+   *   Prescaler / Period 等参数。看代码时不要信 CubeMX 的配置，以这里为准。
+   *
+   *   TIM2 的时钟使能和中断使能仍由 HAL 的 MX_TIM2_Init() + HAL_NVIC 完成，
+   *   无需重复操作。
+   */
+  TIM2->PSC = 0;           // 不分频，1 tick = 1 CPU cycle ≈ 6ns
+  TIM2->EGR |= TIM_EGR_UG; // 产生更新事件，将 PSC 立即装入影子寄存器
+  TIM2->SR = 0;            // 清除 UG 产生的更新标志
+  TIM2->CR1 &=
+      ~TIM_CR1_ARPE;        // 禁用 ARR 预装载：写入 ARR 立即生效（不等待 UEV）
+  TIM2->ARR = 0xFFFF;       // 初始最大值（防误触发）
+  TIM2->CR1 |= TIM_CR1_OPM; // 单脉冲模式：计时完自动停
+  TIM2->DIER |= TIM_DIER_UIE; // 使能更新中断
+
+  /* ── DWT 测量初始化 ── */
+  s_prev_cyccnt = DWT->CYCCNT;
 }
 
 void LED_SetScreenEnable(uint8_t enable) {
@@ -223,4 +277,10 @@ void LED_SetScreenEnable(uint8_t enable) {
   //   // OE=1 → 灭屏
   //   LED_EN_GPIO_Port->BSRR = LED_EN_Pin;
   // }
+}
+
+void LED_SetBrightness(uint8_t brightness) {
+  if (brightness > 100)
+    brightness = 100;
+  s_brightness = brightness;
 }

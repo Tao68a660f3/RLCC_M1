@@ -35,4 +35,7 @@ void LED_Commit(void);
 /** 屏幕使能控制：enable=1 亮屏 (OE=0)，enable=0 灭屏 (OE=1) */
 void LED_SetScreenEnable(uint8_t enable);
 
+/** 设置屏幕亮度 0~100 (0=灭, 100=最亮) */
+void LED_SetBrightness(uint8_t brightness);
+
 #endif
