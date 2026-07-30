@@ -84,6 +84,9 @@ static void _Render_2Line(const char *text) {
   window_list[0].y = window_list[1].y;
   window_list[1].y = ty;
 
+  window_list[0].x_offset = 0;
+  window_list[1].x_offset = 0;
+
   next_textmode_win = (win_idx == 0) ? 1 : 0;
 }
 

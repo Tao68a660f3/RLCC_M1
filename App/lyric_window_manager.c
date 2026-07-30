@@ -342,8 +342,7 @@ static int _FindDisplayStartIdx(uint32_t now) {
       return (i > 0) ? (i - 1) : 0;
 
     // case 3: 当前行已过期，检查下一行是否需要提前切换
-    if (now > (a->start_time_ms + a->duration) &&
-        (i + 1) < g_sys.active_count) {
+    if ((i + 1) < g_sys.active_count) {
       LyricArea *b = g_sys.sorted_lyrics[i + 1];
       if (b->cmd == 0x13 && i + 2 < g_sys.active_count)
         b = g_sys.sorted_lyrics[i + 2];
