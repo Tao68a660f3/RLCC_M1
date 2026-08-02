@@ -13,7 +13,7 @@
 
 extern volatile uint8_t need_commit;
 
-/** 每帧一次 EWMA 更新后，所有消费者直接读这个全局值 */
+/** 每帧一次平滑时间更新后，所有消费者直接读这个全局值 */
 static uint32_t s_curr_play_time_ms = 0;
 
 LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
@@ -67,68 +67,98 @@ void LyricWM_Reset(void) {
 }
 
 /**
- * @brief 每帧在 LyricWM_RenderMgr 入口调用一次，更新 EWMA 平滑时间
+ * @brief 130FPS 纯整数 PID 歌词时间轴 Smoothing 算法
+ * 每帧在 LyricWM_RenderMgr 入口调用一次，更新平滑时间 纯整数微秒级 PID
+ * 速度微调 Smoothing 运行环境：STM32F401 @ 130FPS (dt ≈ 7.69ms)
+ *
+ * @note  【核心算法说明与开发者血泪警告】
+ * 1. 本算法专为 1.0x 正常人类听歌速度极速优化，精度锁定在 1 微秒 (0.001ms)。
+ * 2. 限制 PID 速度微调区间为 [0.900x, 1.100x] (900 ~
+ * 1100)，旨在抹平蓝牙/串口抖动。
+ *
+ * @warning
+ *        🚨 警告：严禁使用 0.1x 鬼畜慢放 或 4.0x 极速狂飙模式听歌！
+ *        开发者已亲身试毒，听完脑袋直接爆炸！🤯
+ *        若强行开启非人道倍速，由于 PID 限幅保护，时间轴会发生频繁 Seek
+ * 强制跳变（即屏幕抽搐）。 这不是
+ * Bug，这是硬件对奇葩听歌习惯发出的【物理抗议】！请受着！🤪
  */
 static void _UpdateSmoothTime(void) {
-  static uint32_t s_smooth = 0;
+  static uint32_t s_smooth_ms = 0;
+  static uint32_t s_smooth_sub_ms = 0; // 毫秒的小数部分 (范围 0~999，即微秒)
+  static uint32_t s_last_tick = 0;
 
-  // 从未收到同步包
+  uint32_t now_tick = HAL_GetTick();
+  if (s_last_tick == 0) {
+    s_last_tick = now_tick;
+  }
+  uint32_t dt = now_tick - s_last_tick; // 130FPS 下 dt 通常为 7ms 或 8ms
+  s_last_tick = now_tick;
+
+  // 1. 边界拦截
   if (g_sys.local_record_tick == 0) {
     s_curr_play_time_ms = 0;
     return;
   }
-
-  // 暂停态：时间冻结
   if (!g_sys.is_playing) {
-    s_smooth = g_sys.remote_time_ms;
+    s_smooth_ms = g_sys.remote_time_ms;
+    s_smooth_sub_ms = 0;
     s_curr_play_time_ms = g_sys.remote_time_ms;
     return;
   }
 
-  // 原始推算
-  uint32_t raw =
-      g_sys.remote_time_ms + (HAL_GetTick() - g_sys.local_record_tick);
+  // 2. 计算原始推算时间
+  uint32_t raw = g_sys.remote_time_ms + (now_tick - g_sys.local_record_tick);
 
-  // 首次
-  if (s_smooth == 0) {
-    s_smooth = raw;
+  if (s_smooth_ms == 0) {
+    s_smooth_ms = raw;
+    s_smooth_sub_ms = 0;
     s_curr_play_time_ms = raw;
     return;
   }
 
 #define SEEK_THRESHOLD_MS 300
 
-  if (raw > s_smooth) {
-    uint32_t delta = raw - s_smooth;
-    if (delta > SEEK_THRESHOLD_MS) {
-      s_smooth = raw;
-    } else {
-      uint32_t step = (delta + 4) / 8;
-      if (step < 1)
-        step = 1;
-      if (step > delta)
-        step = delta;
-      s_smooth += step;
-    }
+  // 3. 计算时间差 error
+  int32_t error = (int32_t)raw - (int32_t)s_smooth_ms;
+
+  // 4. 大跨步拖动进度条 (Seek)
+  if (error > SEEK_THRESHOLD_MS || error < -SEEK_THRESHOLD_MS) {
+    s_smooth_ms = raw;
+    s_smooth_sub_ms = 0;
   } else {
-    uint32_t delta = s_smooth - raw;
-    if (delta > SEEK_THRESHOLD_MS) {
-      s_smooth = raw;
-    } else {
-      s_smooth += 1;
-    }
+    // 5. 纯整数 PID 速度微调
+    // 基准速度 ratio = 1000 (代表 1.000x)
+    // Kp = 2，即每落后 1ms，速度提升 2/1000 = 0.2%
+    int32_t speed_ratio = 1000 + (error * 2);
+
+    // 限制微调上限为 0.900x ~ 1.100x (900 ~ 1100)
+    // 130FPS 下肉眼对 ±10% 的速度微调绝对无法感知，但 1 秒内能轻松抹平 100ms
+    // 的抖动！
+    if (speed_ratio > 1100)
+      speed_ratio = 1100;
+    if (speed_ratio < 900)
+      speed_ratio = 900;
+
+    // 6. 高精度整数累加
+    // 实际增加的微毫秒 = dt * speed_ratio
+    // 比如 dt=8ms, speed_ratio=1020, 增加 8160 (即 8.16ms)
+    uint32_t total_sub = s_smooth_sub_ms + (dt * (uint32_t)speed_ratio);
+
+    s_smooth_ms += total_sub / 1000;    // 进位到整数毫秒
+    s_smooth_sub_ms = total_sub % 1000; // 留存小数微秒
   }
 
 #undef SEEK_THRESHOLD_MS
 
-  s_curr_play_time_ms = s_smooth;
+  s_curr_play_time_ms = s_smooth_ms;
 }
 
 /**
  * @brief 读取当前播放时间 (ms)
  *
  * 注意：此函数已是轻量读全局变量，每帧可多次调用。
- *       实际 EWMA 更新由 _UpdateSmoothTime 每帧仅执行一次。
+ *       实际平滑时间更新由 _UpdateSmoothTime 每帧仅执行一次。
  */
 uint32_t Get_Current_PlayTime(void) { return s_curr_play_time_ms; }
 
@@ -368,7 +398,7 @@ void LyricWM_RenderMgr(void) {
   if (need_commit)
     return;
 
-  /* === 每帧仅在此处更新一次 EWMA 平滑时间 === */
+  /* === 每帧仅在此处更新一次平滑时间 === */
   _UpdateSmoothTime();
 
   for (uint16_t i = used_lyric_lines; i < MAX_WINDOWS; i++) {
