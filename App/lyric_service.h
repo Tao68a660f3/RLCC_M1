@@ -56,9 +56,9 @@ extern uint8_t media_updated;
 // 接口函数
 void LyricService_Init(void);
 void LyricService_ClearPool(void); // 清空歌词池（切歌时重置所有状态）
-void Lyric_OnMetadataReceived(uint8_t *payload, uint8_t len);
-void Lyric_OnSyncReceived(uint8_t *payload, uint8_t len);
-void Lyric_OnContentReceived(uint8_t cmd, uint8_t *payload, uint8_t len);
-void RTC_OnTimeSyncReceived(uint8_t *payload, uint8_t len);
+void Lyric_OnMetadataReceived(uint8_t *payload, uint16_t len);
+void Lyric_OnSyncReceived(uint8_t *payload, uint16_t len);
+void Lyric_OnContentReceived(uint8_t cmd, uint8_t *payload, uint16_t len);
+void RTC_OnTimeSyncReceived(uint8_t *payload, uint16_t len);
 
 #endif

@@ -10,20 +10,29 @@
 // KEY_UP, KEY_DOWN, KEY_LEFT, KEY_OK, KEY_RIGHT
 
 // ====== 协议模式 — 播放控制 Slot ======
+// 回控帧格式: [0]Head(0xAB) [1]Cmd [2]LenH [3]LenL [4]Check
+// Check = 全帧异或(0xAB ^ Cmd ^ LenH ^ LenL)，与 PC 端 BackControlService
+// 严格对称 (PC 端要求至少 5 字节帧含校验位，旧 4 字节格式无法被解析)
+static void Slot_Playback_Send(uint8_t cmd) {
+  uint8_t pkt[5];
+  pkt[0] = 0xAB;                              // Head
+  pkt[1] = cmd;                               // Cmd
+  pkt[2] = 0x00;                              // LenH
+  pkt[3] = 0x00;                              // LenL
+  pkt[4] = pkt[0] ^ pkt[1] ^ pkt[2] ^ pkt[3]; // 全帧异或校验位
+  COM_SendBytes(pkt, 5);
+}
 static void Slot_Playback_Next(void) {
-  // 下一曲: AB A1 00 00
-  uint8_t pkt[] = {0xAB, 0xA1, 0x00, 0x00};
-  COM_SendBytes(pkt, 4);
+  // 下一曲: AB A1 00 00 [Check]
+  Slot_Playback_Send(0xA1);
 }
 static void Slot_Playback_Prev(void) {
-  // 上一曲: AB A2 00 00
-  uint8_t pkt[] = {0xAB, 0xA2, 0x00, 0x00};
-  COM_SendBytes(pkt, 4);
+  // 上一曲: AB A2 00 00 [Check]
+  Slot_Playback_Send(0xA2);
 }
 static void Slot_Playback_PlayPause(void) {
-  // 播放/暂停: AB A3 00 00
-  uint8_t pkt[] = {0xAB, 0xA3, 0x00, 0x00};
-  COM_SendBytes(pkt, 4);
+  // 播放/暂停: AB A3 00 00 [Check]
+  Slot_Playback_Send(0xA3);
 }
 static void Slot_Playback_Rewind(void) {
   // TODO: 快退 — 上位机协议尚未定义，暂不实现

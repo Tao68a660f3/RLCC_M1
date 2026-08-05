@@ -22,6 +22,20 @@ void LyricService_ClearPool(void) {
   media_updated = 1;
 }
 
+// 排序优先级：0x15(增强原文) -> 0x12(原文) -> 0x13(翻译) -> 其他
+static uint8_t _CmdRank(uint8_t cmd) {
+  switch (cmd) {
+  case 0x15:
+    return 0;
+  case 0x12:
+    return 1;
+  case 0x13:
+    return 2;
+  default:
+    return 3;
+  }
+}
+
 static void _Lyric_UpdateSortedArray(void) {
   g_sys.active_count = 0;
 
@@ -32,7 +46,8 @@ static void _Lyric_UpdateSortedArray(void) {
     }
   }
 
-  // 2. 基础排序：Index 升序，同 Index 原文 > 翻译
+  // 2. 基础排序：Index 升序为主；同 Index 时按级别升序
+  //    (0x15 与 0x12 同属原文，0x15 在前；0x13 翻译排最后)
   for (int i = 0; i < g_sys.active_count; i++) {
     for (int j = i + 1; j < g_sys.active_count; j++) {
       LyricArea *a = g_sys.sorted_lyrics[i];
@@ -40,8 +55,8 @@ static void _Lyric_UpdateSortedArray(void) {
       bool swap = false;
       if (a->line_index > b->line_index)
         swap = true;
-      else if (a->line_index == b->line_index && a->cmd == 0x13 &&
-               b->cmd != 0x13)
+      else if (a->line_index == b->line_index &&
+               _CmdRank(a->cmd) > _CmdRank(b->cmd))
         swap = true;
 
       if (swap) {
@@ -56,35 +71,65 @@ static void _Lyric_UpdateSortedArray(void) {
   for (int i = 0; i < g_sys.active_count; i++) {
     LyricArea *curr = g_sys.sorted_lyrics[i];
 
-    // 只有 0x12/13 需要动态预测 (0x14 已自带精准结束时间)
-    if (curr->cmd == 0x12 || curr->cmd == 0x13) {
-      bool found_next = false;
+    // 0x14/0x15 已自带精准结束时间，跳过；其他 cmd 跳过
+    if (curr->cmd != 0x12 && curr->cmd != 0x13)
+      continue;
 
-      // 寻找同一个 cmd 类型的下一行
+    bool found = false;
+
+    // --- 0x13 翻译：优先继承同 Index 的 0x15 精准时长 ---
+    // (0x15 解析时已存 duration = end_time - start_time)
+    if (curr->cmd == 0x13) {
+      for (int j = 0; j < g_sys.active_count; j++) {
+        LyricArea *enh = g_sys.sorted_lyrics[j];
+        if (enh->cmd == 0x15 && enh->line_index == curr->line_index) {
+          curr->duration = enh->duration;
+          found = true;
+          break;
+        }
+      }
+      if (found)
+        continue;
+    }
+
+    // --- 0x12 原文：向下找下一个原文类 (0x12 或 0x15) 计算时长 ---
+    for (int j = i + 1; j < g_sys.active_count; j++) {
+      LyricArea *next = g_sys.sorted_lyrics[j];
+      if (next->cmd == 0x12 || next->cmd == 0x15) {
+        // 时长 = 下一行开始时间 - 本行开始时间
+        if (next->start_time_ms > curr->start_time_ms) {
+          curr->duration = next->start_time_ms - curr->start_time_ms;
+          found = true;
+        }
+        break;
+      }
+    }
+
+    // --- 0x13 翻译：找不到 0x15 时，向下找下一个 0x13 预测 ---
+    if (!found && curr->cmd == 0x13) {
       for (int j = i + 1; j < g_sys.active_count; j++) {
         LyricArea *next = g_sys.sorted_lyrics[j];
-        if (next->cmd == curr->cmd) {
-          // 时长 = 下一行开始时间 - 本行开始时间
+        if (next->cmd == 0x13) {
           if (next->start_time_ms > curr->start_time_ms) {
             curr->duration = next->start_time_ms - curr->start_time_ms;
-            found_next = true;
+            found = true;
           }
           break;
         }
       }
+    }
 
-      // 如果后面没数据了，根据歌曲总时长 total_ms 预测
-      if (!found_next && g_sys.total_ms > curr->start_time_ms) {
-        uint32_t remaining = g_sys.total_ms - curr->start_time_ms;
-        // 最后一两句通常不会持续到死，限制在 5s 内
-        curr->duration = (remaining > 5000) ? 5000 : remaining;
-      }
+    // 如果后面没数据了，根据歌曲总时长 total_ms 预测
+    if (!found && g_sys.total_ms > curr->start_time_ms) {
+      uint32_t remaining = g_sys.total_ms - curr->start_time_ms;
+      // 最后一两句通常不会持续到死，限制在 5s 内
+      curr->duration = (remaining > 5000) ? 5000 : remaining;
     }
   }
 }
 
 // 0x10: 元数据解析 (TLV格式: Len + String)
-void Lyric_OnMetadataReceived(uint8_t *payload, uint8_t len) {
+void Lyric_OnMetadataReceived(uint8_t *payload, uint16_t len) {
   uint8_t p = 0;
 
   // Title
@@ -116,7 +161,7 @@ void Lyric_OnMetadataReceived(uint8_t *payload, uint8_t len) {
 }
 
 // 0x11: 时间同步
-void Lyric_OnSyncReceived(uint8_t *payload, uint8_t len) {
+void Lyric_OnSyncReceived(uint8_t *payload, uint16_t len) {
   g_sys.is_playing = payload[0];
   g_sys.remote_time_ms = *(uint32_t *)&payload[1];
   g_sys.total_ms = *(uint32_t *)&payload[5]; // 如果需要也可以存
@@ -130,7 +175,7 @@ void Lyric_OnSyncReceived(uint8_t *payload, uint8_t len) {
  * 2. 查重逻辑：Index + Cmd 联合判定，防止原文翻译互踢
  * 3. 排序逻辑：Index升序，同Index时 原文(12/14) > 翻译(13)
  */
-void Lyric_OnContentReceived(uint8_t cmd, uint8_t *payload, uint8_t len) {
+void Lyric_OnContentReceived(uint8_t cmd, uint8_t *payload, uint16_t len) {
   // --- 1. 偏移量解析 (基于 payload[0] 是 Index) ---
   uint16_t index = *(uint16_t *)&payload[0];
   uint32_t start_time = *(uint32_t *)&payload[2];

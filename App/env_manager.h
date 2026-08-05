@@ -41,6 +41,6 @@ void Env_Manager_Tick(void);
 void Env_Manager_SetFormat(TimeFormat_t format);
 
 // 串口对时分发目标
-void RTC_OnTimeSyncReceived(uint8_t *payload, uint8_t len);
+void RTC_OnTimeSyncReceived(uint8_t *payload, uint16_t len);
 
 #endif

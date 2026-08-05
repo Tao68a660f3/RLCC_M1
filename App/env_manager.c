@@ -182,7 +182,8 @@ void Env_Manager_Tick(void) {
 
       snprintf(g_str_temp, sizeof(g_str_temp), "%2d.%d" CELSIUS, t_int, t_dec);
       snprintf(g_str_humi, sizeof(g_str_humi), "%2d%%", (int)hum);
-      printf("report: Temp: %.1f C, Humi: %.1f %%\r\n", temp, hum);
+      // printf("report: Temp: %.1f C, Humi: %.1f %%\r\n", temp, hum);
+      // 后续修改为温湿度按协议上报
 
       // 温度舒适度
       if (temp >= 18.0f && temp <= 26.0f)
@@ -214,7 +215,7 @@ void Env_Manager_SetFormat(TimeFormat_t format) {
   _Env_Refine_Time(&cur);
 }
 
-void RTC_OnTimeSyncReceived(uint8_t *payload, uint8_t len) {
+void RTC_OnTimeSyncReceived(uint8_t *payload, uint16_t len) {
   if (len < 7)
     return;
   for (int i = 0; i < 7; i++) {

@@ -7,7 +7,8 @@
 typedef enum {
   ST_IDLE = 0,
   ST_CMD,
-  ST_LEN,
+  ST_LENH,
+  ST_LENL,
   ST_PAYLOAD,
   ST_CHECK,
   ST_ERROR
@@ -15,12 +16,14 @@ typedef enum {
 
 static ParseState current_state = ST_IDLE;
 static uint8_t calc_checksum = 0;
-static uint8_t payload_cnt = 0;
+static uint16_t payload_cnt = 0;
+static uint8_t len_h = 0; // 暂存 LenH，等 LenL 到达后合成 2 字节长度
 
 void Protocol_Init(void) {
   current_state = ST_IDLE;
   calc_checksum = 0;
   payload_cnt = 0;
+  len_h = 0;
 }
 
 uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
@@ -28,7 +31,7 @@ uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
   if (current_state == ST_ERROR) {
     if (byte == 0xAA) {
       current_state = ST_CMD;
-      calc_checksum = 0;
+      calc_checksum = byte; // 帧头 0xAA 计入全帧异或
     }
     return 0;
   }
@@ -37,24 +40,32 @@ uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
   case ST_IDLE:
     if (byte == 0xAA) {
       current_state = ST_CMD;
-      calc_checksum = 0;
+      calc_checksum = byte; // 帧头 0xAA 计入全帧异或
     }
     break;
 
   case ST_CMD:
     out_pkt->cmd = byte;
-    current_state = ST_LEN;
+    calc_checksum ^= byte;
+    current_state = ST_LENH;
     break;
 
-  case ST_LEN:
+  case ST_LENH:
+    len_h = byte;
+    calc_checksum ^= byte;
+    current_state = ST_LENL;
+    break;
+
+  case ST_LENL:
+    calc_checksum ^= byte;
+    out_pkt->len = ((uint16_t)len_h << 8) | byte;
     // 长度超限 → 错误态，防止写爆 payload
-    if (byte > MAX_PAYLOAD_SIZE) {
+    if (out_pkt->len > MAX_PAYLOAD_SIZE) {
       current_state = ST_ERROR;
       return 0;
     }
-    out_pkt->len = byte;
     payload_cnt = 0;
-    current_state = (byte == 0) ? ST_CHECK : ST_PAYLOAD;
+    current_state = (out_pkt->len == 0) ? ST_CHECK : ST_PAYLOAD;
     break;
 
   case ST_PAYLOAD:
@@ -68,8 +79,11 @@ uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
   case ST_CHECK:
     current_state = ST_IDLE;
     if (byte == calc_checksum) {
-      // 为字符串补齐结束符，确保安全
-      out_pkt->payload[out_pkt->len] = '\0';
+      // 为字符串补齐结束符，确保安全（防止 len==MAX 时越界）
+      if (out_pkt->len < MAX_PAYLOAD_SIZE)
+        out_pkt->payload[out_pkt->len] = '\0';
+      else
+        out_pkt->payload[MAX_PAYLOAD_SIZE - 1] = '\0';
       return 1;
     } else {
       current_state = ST_ERROR;
@@ -78,76 +92,6 @@ uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
   }
   return 0;
 }
-
-/*
-typedef enum {
-    ST_IDLE,
-    ST_CMD,
-    ST_LEN,
-    ST_PAYLOAD,
-    ST_CHECK,
-    ST_ERROR  // 新增错误状态
-} State_t;
-
-uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
-    // 在错误状态下，唯一的出口是检测到合法的起始头 0xAA
-    if (current_state == ST_ERROR) {
-        if (byte == 0xAA) {
-            current_state = ST_CMD;
-            calc_checksum = 0;
-            return 0;
-        }
-        return 0; // 继续等待
-    }
-
-    switch (current_state) {
-        case ST_IDLE:
-            if (byte == 0xAA) {
-                current_state = ST_CMD;
-                calc_checksum = 0;
-            }
-            break;
-
-        case ST_CMD:
-            out_pkt->cmd = byte;
-            calc_checksum ^= byte; // 补齐校验
-            current_state = ST_LEN;
-            break;
-
-        case ST_LEN:
-            // 鲁棒性关键：检查长度是否超过 A1 的缓冲区限制
-            if (byte > MAX_PAYLOAD_SIZE) {
-                current_state = ST_ERROR;
-                return 0;
-            }
-            out_pkt->len = byte;
-            calc_checksum ^= byte; // 补齐校验
-            payload_cnt = 0;
-            current_state = (byte == 0) ? ST_CHECK : ST_PAYLOAD;
-            break;
-
-        case ST_PAYLOAD:
-            out_pkt->payload[payload_cnt++] = byte;
-            calc_checksum ^= byte;
-            if (payload_cnt >= out_pkt->len) {
-                current_state = ST_CHECK;
-            }
-            break;
-
-        case ST_CHECK:
-            current_state = ST_IDLE;
-            if (byte == calc_checksum) {
-                // 成功解析后，为字符串补齐结束符，确保滚动显示安全
-                out_pkt->payload[out_pkt->len] = '\0';
-                return 1;
-            } else {
-                current_state = ST_ERROR; // 校验失败进入错误状态
-            }
-            break;
-    }
-    return 0;
-}
-*/
 
 // ---------------------------------------------------------
 // 协议分发器：解析成功后，会根据命令码跳转到对应的处理函数

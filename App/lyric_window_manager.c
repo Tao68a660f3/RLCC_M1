@@ -117,7 +117,7 @@ static void _UpdateSmoothTime(void) {
     return;
   }
 
-#define SEEK_THRESHOLD_MS 300
+#define SEEK_THRESHOLD_MS 500
 
   // 3. 计算时间差 error
   int32_t error = (int32_t)raw - (int32_t)s_smooth_ms;
