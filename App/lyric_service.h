@@ -1,3 +1,16 @@
+/**
+ * @file lyric_service.h
+ * @brief 歌词服务：协议解析 + 全局时间轴锚点维护 + 歌词池管理
+ *
+ * 解析 C# 端下发的歌词协议包（0x10~0x15），把结果写入 g_sys：
+ *  - 元数据 (title/artist/album)
+ *  - 时间轴锚点 (base_remote_time / clock_offset / playback_speed 等)
+ *  - 歌词池 (lyric_pool / sorted_lyrics)
+ *
+ * 时间轴锚点供 lyric_window_manager.c 外推为平滑播放时间；
+ * 歌词池供其渲染调度使用。
+ */
+
 #ifndef __LYRIC_SERVICE_H
 #define __LYRIC_SERVICE_H
 
@@ -35,9 +48,18 @@ typedef struct {
   char album[MAX_METADATA_STR_LEN];
 
   // 时间轴
-  uint32_t remote_time_ms;
-  uint32_t total_ms;
-  uint32_t local_record_tick;
+  uint32_t remote_time_ms;    // 最近同步包中的播放进度 (ms)
+  uint32_t total_ms;          // 歌曲总时长
+  uint32_t upstream_tick_ms;  // C# 发包时刻的 Environment.TickCount32
+  int32_t clock_offset_ms;    // C#时钟 - STM32时钟 偏差 (低通滤波)
+  uint32_t base_remote_time;  // 基准包进度锚点 (与外推共用，正常播放绝不覆盖)
+  uint32_t base_remote_tick;  // 基准包 C# tick 锚点
+  uint32_t local_send_tick;   // 基准包映射到 STM32 本地 tick 锚点
+  int32_t min_obs_latency_ms; // 运行途中最优观测延迟
+                              // (obs=local_rx-upstream_tick 的最小值)
+  uint16_t playback_speed;    // 播放倍速 (Q8，256=1.0x，范围[128,768])
+  uint8_t playback_speed_changed; // 变速事件标志 (1 帧有效，供渲染端感知)
+  uint8_t clock_synced;           // 是否已完成首次时钟同步
   uint8_t is_playing;
 
   // 歌词池

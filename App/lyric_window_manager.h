@@ -1,3 +1,12 @@
+/**
+ * @file lyric_window_manager.h
+ * @brief 歌词窗口管理接口：播放时间轴读取 + 歌词渲染调度
+ *
+ * 时间轴语义见 lyric_window_manager.c：s_pi_time 为全局播放时间轴，
+ * 其生命周期由 _UpdateSmoothTime 边界条件（未同步/暂停/变速/Seek）
+ * 管理，UI 模式切换不清零。
+ */
+
 #ifndef __LYRIC_WINDOW_MANAGER_H
 #define __LYRIC_WINDOW_MANAGER_H
 
@@ -6,13 +15,13 @@
 #include <stdint.h>
 
 #define MAX_LYRIC_LINES 4
-#define HEAD_RATE 1000
-#define TAIL_RATE 2000
+#define HEAD_RATE 1000 // 进度映射：头部 10% 视作 0%
+#define TAIL_RATE 2000 // 进度映射：尾部 20% 视作 100%
 
 // 渲染配置
 typedef struct {
   uint8_t win_idx;          // 绑定的物理窗口索引
-  LyricArea *bound_area;    // 【新增】当前绑定的数据源地址
+  LyricArea *bound_area;    // 当前绑定的歌词数据源地址
   uint16_t last_line_index; // 行号缓存
   uint8_t last_cmd;         // 指令号缓存
   CanvasColor color_base;   // 底色

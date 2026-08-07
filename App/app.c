@@ -16,6 +16,7 @@
 #include "ir_remote.h"
 #include "led_display.h"
 #include "led_driver.h"
+#include "lyric_service.h"
 #include "lyric_window_manager.h"
 #include "mem_pool.h"
 #include "ui_manager.h"
@@ -43,6 +44,9 @@ static char Msg_02[] = {0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D, 0x65, 0x20,
                         0x54, 0x6F, 0x20, 0x55, 0x73, 0x65, 0x21, 0x00};
 
 void App_Init() {
+  LyricService_Init(); // 歌词服务：初始化 g_sys（playback_speed=1.0x 等），
+                       // 否则全局 g_sys 处于 .bss 清零态，变速测速除零
+                       // HardFault
   COM_Init(&huart1);
   W25Q64_Init(&hspi1);
   Font_Config_Init();

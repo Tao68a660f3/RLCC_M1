@@ -1,20 +1,37 @@
+/**
+ * @file lyric_window_manager.c
+ * @brief 歌词窗口管理：播放时间轴平滑外推 + 歌词渲染调度
+ *
+ * 职责分层：
+ *  - lyric_service.c   : 协议解析与全局时间轴锚点 (g_sys) 维护；
+ *  - 本文件：把锚点外推为平滑播放时间 (s_pi_time)，并驱动歌词窗口的
+ *    填充 / 换行 / 高亮 / 滚动渲染。
+ *
+ * 播放时间轴是全局系统状态：
+ *  - s_pi_time / s_pi_last_tick 的生命周期由 _UpdateSmoothTime 的边界
+ *    条件管理（未同步 / 暂停 / 变速 / Seek），UI 模式切换只清屏，
+ *    不得清零，否则重进歌词界面会从 0 追赶当前进度。
+ */
+
 #include "lyric_window_manager.h"
 #include "canvas_renderer.h"
 #include "flash_font.h"
 #include "led_driver.h"
 #include "lyric_service.h"
 #include "mem_pool.h"
-#include "stdio.h"
 #include "window_manager.h"
 #include <stdint.h>
 #include <string.h>
-
-// #define DEBUG_PRT
 
 extern volatile uint8_t need_commit;
 
 /** 每帧一次平滑时间更新后，所有消费者直接读这个全局值 */
 static uint32_t s_curr_play_time_ms = 0;
+
+/** PI 平滑后的播放时间 (ms) —— 全局时间轴，UI 切换不清零 */
+static uint32_t s_pi_time = 0;
+/** 上次 PI 计算的墙钟 (ms) */
+static uint32_t s_pi_last_tick = 0;
 
 LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
 uint16_t g_lyric_progress = 0;
@@ -34,8 +51,7 @@ void LyricWM_Init(uint8_t line_count) {
     l_win_cfg[i].last_cmd = 0;
 
     // 默认配色方案
-    l_win_cfg[i].color_base = i % 2 ? C_RED : C_GREEN;
-
+    l_win_cfg[i].color_base = (i % 2) ? C_RED : C_GREEN;
     l_win_cfg[i].color_high = C_YELLOW;
 
     l_win_cfg[i].offset_x = 0;
@@ -48,6 +64,16 @@ void LyricWM_Init(uint8_t line_count) {
 }
 
 void LyricWM_Reset(void) {
+  // 仅清屏与解绑（UI 模式切换 / 切歌共用）。
+  //
+  // 注意：不得重置 PI 平滑状态 s_pi_time / s_pi_last_tick——
+  // 它们是全局时间轴，生命周期由 _UpdateSmoothTime 边界条件管理：
+  //   - 切歌：ClearPool → clock_synced=0 → 下帧自动清零并重建；
+  //   - 暂停：is_playing=0 → 冻结在最近已知进度；
+  //   - 变速/Seek：playback_speed_changed=1 → 硬跳对齐新锚点。
+  // 若在此清零，切换 UI 模式（如 HomeLife → 歌词界面）时画面会
+  // 从 0 开始追赶当前进度。
+
   for (int i = 0; i < used_lyric_lines; i++) {
     // 清除当前 write_idx 的 canvas 内容
     Window_FillText(i, " ", C_YELLOW, CANVAS_Y, VALIGN_MIDDLE);
@@ -67,91 +93,94 @@ void LyricWM_Reset(void) {
 }
 
 /**
- * @brief 130FPS 纯整数 PID 歌词时间轴 Smoothing 算法
- * 每帧在 LyricWM_RenderMgr 入口调用一次，更新平滑时间 纯整数微秒级 PID
- * 速度微调 Smoothing 运行环境：STM32F401 @ 130FPS (dt ≈ 7.69ms)
+ * @brief 130FPS 时间轴算法：speed 感知外推 + PI 平滑控推进速率
+ * 每帧在 LyricWM_RenderMgr 入口调用一次。
  *
- * @note  【核心算法说明与开发者血泪警告】
- * 1. 本算法专为 1.0x 正常人类听歌速度极速优化，精度锁定在 1 微秒 (0.001ms)。
- * 2. 限制 PID 速度微调区间为 [0.900x, 1.100x] (900 ~
- * 1100)，旨在抹平蓝牙/串口抖动。
+ * 原理：
+ *   0x11 同步包在 Lyric_OnSyncReceived 中已建立锚点
+ *   (base_remote_time / local_send_tick / playback_speed)，此后推算
+ *   阶段完全不依赖 UDP 接收时刻 → 免疫网络延迟抖动。
  *
- * @warning
- *        🚨 警告：严禁使用 0.1x 鬼畜慢放 或 4.0x 极速狂飙模式听歌！
- *        开发者已亲身试毒，听完脑袋直接爆炸！🤯
- *        若强行开启非人道倍速，由于 PID 限幅保护，时间轴会发生频繁 Seek
- * 强制跳变（即屏幕抽搐）。 这不是
- * Bug，这是硬件对奇葩听歌习惯发出的【物理抗议】！请受着！🤪
+ *   目标值 target = base_remote_time + 墙钟流逝 × speed
+ *   (含变速感知，与 C# 播放器速率同频)。
+ *
+ *   渲染端用 PI 平滑跟踪 target，分三种行为：
+ *   - 正常播放：s_pi_time 以 speed 速率推进，误差用 P 项低通吸收
+ *   - 变速确认：speed 更新 + 锚点重建 → target 拉开差距，
+ *     P 项逐帧收敛（歌词平滑追赶，不瞬移）
+ *   - Seek/暂停恢复：硬跳重建锚点 + playback_speed_changed 事件
+ *     → s_pi_time 直接对齐 base_remote_time（瞬移接管）
+ *
+ * 边界：
+ *   - 未完成首次同步 → 返回 0
+ *   - 暂停 → 冻结在最近已知进度
+ *   - 卡帧/异常间隔 → elapsed 钳制，防瞬移
  */
+// ===== 渲染端 PI 平滑调参 =====
+// P 项系数 (Q16, ≈2.3%)：调大→变速追赶快(输出偏抖)；调小→稳(追赶滞后)
+#define PI_KP_Q16 1536
+// 单帧 P 项补偿上限 (ms)：防异常误差(如一次大 Seek)导致歌词瞬移
+#define PI_COMP_MAX_MS 40
+// 单帧墙钟上限 (ms)：防长时间卡帧后恢复时的瞬移
+#define PI_FRAME_MAX_MS 100
+
 static void _UpdateSmoothTime(void) {
-  static uint32_t s_smooth_ms = 0;
-  static uint32_t s_smooth_sub_ms = 0; // 毫秒的小数部分 (范围 0~999，即微秒)
-  static uint32_t s_last_tick = 0;
-
   uint32_t now_tick = HAL_GetTick();
-  if (s_last_tick == 0) {
-    s_last_tick = now_tick;
-  }
-  uint32_t dt = now_tick - s_last_tick; // 130FPS 下 dt 通常为 7ms 或 8ms
-  s_last_tick = now_tick;
 
-  // 1. 边界拦截
-  if (g_sys.local_record_tick == 0) {
+  // 1. 边界拦截：未同步（切歌后 ClearPool 清 clock_synced，自动回到此路径）
+  if (!g_sys.clock_synced) {
     s_curr_play_time_ms = 0;
+    s_pi_time = 0;
+    s_pi_last_tick = now_tick;
     return;
   }
+
+  // 2. 暂停：冻结在最近已知进度
   if (!g_sys.is_playing) {
-    s_smooth_ms = g_sys.remote_time_ms;
-    s_smooth_sub_ms = 0;
-    s_curr_play_time_ms = g_sys.remote_time_ms;
+    s_curr_play_time_ms = g_sys.base_remote_time;
+    s_pi_time = g_sys.base_remote_time;
+    s_pi_last_tick = now_tick;
     return;
   }
 
-  // 2. 计算原始推算时间
-  uint32_t raw = g_sys.remote_time_ms + (now_tick - g_sys.local_record_tick);
-
-  if (s_smooth_ms == 0) {
-    s_smooth_ms = raw;
-    s_smooth_sub_ms = 0;
-    s_curr_play_time_ms = raw;
-    return;
+  // 3. 变速/Seek 事件：直接对齐新锚点（硬跳接管），重置 PI
+  if (g_sys.playback_speed_changed) {
+    g_sys.playback_speed_changed = 0;
+    s_pi_time = g_sys.base_remote_time;
+    s_pi_last_tick = now_tick;
   }
 
-#define SEEK_THRESHOLD_MS 500
-
-  // 3. 计算时间差 error
-  int32_t error = (int32_t)raw - (int32_t)s_smooth_ms;
-
-  // 4. 大跨步拖动进度条 (Seek)
-  if (error > SEEK_THRESHOLD_MS || error < -SEEK_THRESHOLD_MS) {
-    s_smooth_ms = raw;
-    s_smooth_sub_ms = 0;
-  } else {
-    // 5. 纯整数 PID 速度微调
-    // 基准速度 ratio = 1000 (代表 1.000x)
-    // Kp = 2，即每落后 1ms，速度提升 2/1000 = 0.2%
-    int32_t speed_ratio = 1000 + (error * 2);
-
-    // 限制微调上限为 0.900x ~ 1.100x (900 ~ 1100)
-    // 130FPS 下肉眼对 ±10% 的速度微调绝对无法感知，但 1 秒内能轻松抹平 100ms
-    // 的抖动！
-    if (speed_ratio > 1100)
-      speed_ratio = 1100;
-    if (speed_ratio < 900)
-      speed_ratio = 900;
-
-    // 6. 高精度整数累加
-    // 实际增加的微毫秒 = dt * speed_ratio
-    // 比如 dt=8ms, speed_ratio=1020, 增加 8160 (即 8.16ms)
-    uint32_t total_sub = s_smooth_sub_ms + (dt * (uint32_t)speed_ratio);
-
-    s_smooth_ms += total_sub / 1000;    // 进位到整数毫秒
-    s_smooth_sub_ms = total_sub % 1000; // 留存小数微秒
+  // 4. 目标 = 锚点 + 墙钟流逝 × speed（Q8，含变速感知）
+  uint32_t elapsed = now_tick - s_pi_last_tick;
+  if (elapsed > PI_FRAME_MAX_MS) {
+    elapsed = PI_FRAME_MAX_MS;
+    s_pi_last_tick = now_tick - elapsed; // 平移，避免累积误差
   }
+  uint32_t target =
+      (uint32_t)((int64_t)g_sys.base_remote_time +
+                 (int64_t)((int32_t)now_tick - (int32_t)g_sys.local_send_tick) *
+                     (int32_t)g_sys.playback_speed / (int32_t)256);
 
-#undef SEEK_THRESHOLD_MS
+  // 5. 推进速率 = elapsed × speed（speed 感知，与锚点同步增长）
+  int32_t frame_step =
+      (int32_t)((int64_t)elapsed * g_sys.playback_speed / (int32_t)256);
+  s_pi_time = (uint32_t)((int32_t)s_pi_time + frame_step);
 
-  s_curr_play_time_ms = s_smooth_ms;
+  // 6. P 项误差补偿：低通吸收 target 与 s_pi_time 的偏差
+  int32_t err = (int32_t)target - (int32_t)s_pi_time;
+  int32_t comp = (int32_t)((int64_t)err * PI_KP_Q16 / 65536);
+  if (comp > PI_COMP_MAX_MS)
+    comp = PI_COMP_MAX_MS;
+  if (comp < -PI_COMP_MAX_MS)
+    comp = -PI_COMP_MAX_MS;
+  s_pi_time = (uint32_t)((int32_t)s_pi_time + comp);
+  s_pi_last_tick = now_tick;
+
+  // 7. 封顶总时长
+  if (g_sys.total_ms > 0 && s_pi_time > g_sys.total_ms)
+    s_curr_play_time_ms = g_sys.total_ms;
+  else
+    s_curr_play_time_ms = s_pi_time;
 }
 
 /**
@@ -281,6 +310,10 @@ static void _Lyric_RenderWithShader(LyricWinConfig *cfg, uint16_t h_px) {
                       cfg->offset_x, cfg->offset_y);
 }
 
+/**
+ * @brief 回收最"过期"的窗口（已结束最久 / 空绑定）
+ * @return 目标窗口索引；无可用窗口返回 -1
+ */
 static int _RecycleWindow(uint32_t now) {
   int target_w = -1;
   uint32_t max_overdue = 0;
@@ -469,7 +502,7 @@ void LyricWM_Process(void) {
         // 第一步：清除旧内容（清空画布，模式与底色保持一致）
         Window_FillText(cfg->win_idx, " ", cfg->color_base, cm, VALIGN_MIDDLE);
 
-        // 清除双缓冲中此窗口物理区域的残留像素（含旧偏移偏移，_RecalcOffsetYByTimeOrder
+        // 清除双缓冲中此窗口物理区域的残留像素（含旧偏移，_RecalcOffsetYByTimeOrder
         // 尚未更新）
         LED_Window *win = &window_list[cfg->win_idx];
         LED_ClearAreaAllBuffers(win->x + (int16_t)cfg->offset_x,
