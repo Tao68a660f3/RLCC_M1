@@ -426,7 +426,7 @@ static void _Sync_FineTune(int32_t obs, uint32_t remote_time_ms,
     return;
 
   // 最小延迟锚点追踪：观测到更干净路径时前移锚点
-  if (obs < g_sys.min_obs_latency_ms - RETUNE_MARGIN_MS) {
+  if (obs > g_sys.min_obs_latency_ms + RETUNE_MARGIN_MS) {
     // new_offset = -(offset_true + d_new)，只可能更准，绝不回跳
     g_sys.clock_offset_ms += (g_sys.min_obs_latency_ms - obs);
     g_sys.min_obs_latency_ms = obs;
