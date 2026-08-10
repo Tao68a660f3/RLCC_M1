@@ -47,6 +47,16 @@ void UI_Manager_OnLineReceived_Single(const char *text, CanvasColor color);
 // 通用文本行入口：COM 层拆包后调用，内部按 g_curr_ui_mode 自动分发
 void UI_Manager_OnTextLineReceived(const char *text);
 
+// ====== 协议内文本模式（0x16 驱动，保持在 SYS_MODE_PROTOCOL_MODE 内）======
+/** 查询当前是否处于协议内文本模式 */
+uint8_t UI_Manager_IsProtocolTextMode(void);
+/** 进入协议内文本模式（由 0x16 首位触发，幂等） */
+void UI_Manager_EnterProtocolTextMode(void);
+/** 退出协议内文本模式，恢复进入前的 UI 模式布局（由非 0x16 指令触发） */
+void UI_Manager_ExitProtocolTextMode(void);
+/** 0x16 纯文本数据入口：进入子模式并渲染文本 */
+void UI_Manager_OnProtocolTextReceived(const uint8_t *payload, uint16_t len);
+
 // ====== 息屏控制 ======
 /** 切换息屏/亮屏 */
 void UI_Manager_ToggleScreen(void);

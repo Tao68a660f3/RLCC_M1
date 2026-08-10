@@ -94,7 +94,8 @@ void LyricWM_Reset(void) {
 
 /**
  * @brief 130FPS 时间轴算法：speed 感知外推 + PI 平滑控推进速率
- * 每帧在 LyricWM_RenderMgr 入口调用一次。
+ * 每帧由 LyricWM_UpdatePlayTime()（UI_Manager_Tick Step1.6）调用一次，
+ * 与渲染路径（LyricWM_RenderMgr / WindowMgr）解耦。
  *
  * 原理：
  *   0x11 同步包在 Lyric_OnSyncReceived 中已建立锚点
@@ -190,6 +191,15 @@ static void _UpdateSmoothTime(void) {
  *       实际平滑时间更新由 _UpdateSmoothTime 每帧仅执行一次。
  */
 uint32_t Get_Current_PlayTime(void) { return s_curr_play_time_ms; }
+
+/**
+ * @brief 每帧推进全局播放时间轴（薄封装）
+ *
+ * 由 UI_Manager_Tick 每帧统一调用一次，与渲染路径解耦：
+ *   - need_commit 短路 / 协议内文本子模式 / 息屏 均不影响时间轴推进
+ *   - 渲染端（LyricWM_RenderMgr / WindowMgr）读 Get_Current_PlayTime() 即可
+ */
+void LyricWM_UpdatePlayTime(void) { _UpdateSmoothTime(); }
 
 /**
  * @brief 优化版进度计算
@@ -431,8 +441,9 @@ void LyricWM_RenderMgr(void) {
   if (need_commit)
     return;
 
-  /* === 每帧仅在此处更新一次平滑时间 === */
-  _UpdateSmoothTime();
+  /* 注：全局播放时间轴已由 UI_Manager_Tick 每帧调用
+   * LyricWM_UpdatePlayTime() 统一推进，本处不再调用 _UpdateSmoothTime。
+   * need_commit 短路只影响渲染，不影响时间轴。 */
 
   for (uint16_t i = used_lyric_lines; i < MAX_WINDOWS; i++) {
     WindowManager_Single_Process(i);

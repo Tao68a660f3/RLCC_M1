@@ -41,6 +41,11 @@ extern LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
 void LyricWM_Init(uint8_t line_count);
 void LyricWM_Reset(void);
 uint32_t Get_Current_PlayTime(void);
+/** 每帧推进全局播放时间轴（PI 平滑外推）。
+ *  由 UI_Manager_Tick 每帧统一调用一次，与渲染路径解耦：
+ *  即使 need_commit 短路 / 协议内文本子模式 / 息屏，时间轴也照常推进。
+ */
+void LyricWM_UpdatePlayTime(void);
 void LyricWM_RenderMgr(void);
 void LyricWM_Process(void);
 

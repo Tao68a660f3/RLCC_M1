@@ -1,5 +1,6 @@
 #include "protocol_parser.h"
 #include "lyric_service.h"
+#include "ui_manager.h"
 #include <stdio.h>
 
 // #define DEBUG_PRT
@@ -97,6 +98,12 @@ uint8_t Protocol_FeedByte(uint8_t byte, ProtocolPacket *out_pkt) {
 // 协议分发器：解析成功后，会根据命令码跳转到对应的处理函数
 // ---------------------------------------------------------
 void Protocol_Dispatcher(ProtocolPacket *pkt) {
+  // 协议内文本子模式：任何非 0x16 指令到达 → 退出子模式，恢复歌词渲染。
+  // 上位机需在发送纯文本段落时暂停其他指令包。
+  if (pkt->cmd != 0x16) {
+    UI_Manager_ExitProtocolTextMode();
+  }
+
   switch (pkt->cmd) {
   case 0x10:
     Lyric_OnMetadataReceived(pkt->payload, pkt->len);
@@ -111,7 +118,9 @@ void Protocol_Dispatcher(ProtocolPacket *pkt) {
     Lyric_OnContentReceived(pkt->cmd, pkt->payload, pkt->len);
     break;
   case 0x16:
-    // Protocol_OnTextReceived(...);
+    // 纯文本：数据由协议层提供，行为与 SYS_MODE_TXT_MODE 完全一致，
+    // 但不走 COM_Process_TextMode()
+    UI_Manager_OnProtocolTextReceived(pkt->payload, pkt->len);
     break;
   case 0x20:
     RTC_OnTimeSyncReceived(pkt->payload, pkt->len);

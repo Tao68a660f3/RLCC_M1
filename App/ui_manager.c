@@ -18,6 +18,15 @@ Sys_Mode_t g_curr_sys_mode = SYS_MODE_PROTOCOL_MODE;
 /** 息屏标志：1=熄灭，0=亮屏 */
 static uint8_t s_screen_off = 0;
 
+// ====== 协议内文本模式（0x16 驱动，保持在 SYS_MODE_PROTOCOL_MODE 内）======
+/** 1 = 处于协议内文本模式 */
+static uint8_t s_proto_text_active = 0;
+/** 双行文本渲染交替起点（原 _Render_2Line 内 static 提升为文件级以便重置） */
+static uint8_t s_next_textmode_win = 0;
+/** 1 = 正在 EnterProtocolTextMode 转场（其内部 SetMode 触发的
+ *  _UI_Cleanup_Current 应跳过清标志，防止进入子模式被自杀式中断） */
+static uint8_t s_entering_proto_text = 0;
+
 // 每个模式默认的字体配置（渲染时使用，模式内部可临时切换）
 typedef struct {
   uint8_t font_asc; // ASCII 字体序号
@@ -41,8 +50,15 @@ static void _ApplyDefaultFont(void) {
   Font_Select_GBK(mf->font_gbk);
 }
 
-/** 清理上一个模式的残余状态 */
+/** 清理上一个模式的残余状态（任意模式切换的先决步骤） */
 static void _UI_Cleanup_Current(void) {
+  // 模式切换 = 退出协议内文本子模式（与 SetSysMode 约定一致）。
+  // 唯一例外是 EnterProtocolTextMode 转场：其内部 SetMode 触发的
+  // cleanup 由 s_entering_proto_text 保护，不得清掉刚置位的标志，
+  // 否则进入子模式会被自杀式中断（子模式布局也会失效）。
+  if (!s_entering_proto_text)
+    s_proto_text_active = 0;
+
   LyricWM_Reset();
   WindowManager_Init();
   LED_Clear(); // 清除整个 frame_buffer，防止旧模式区域残留
@@ -69,11 +85,10 @@ static void _SetScrollIfNeeded(uint8_t win_idx) {
  * @brief 双行模式：交替渲染到窗口0/1，交换Y位置使新行在下
  */
 static void _Render_2Line(const char *text) {
-  static uint8_t next_textmode_win = 0;
   if (text == NULL || strlen(text) == 0)
     return;
 
-  uint8_t win_idx = next_textmode_win;
+  uint8_t win_idx = s_next_textmode_win;
 
   Window_FillText(win_idx, text, (win_idx == 0) ? C_RED : C_GREEN,
                   (win_idx == 0) ? CANVAS_R : CANVAS_G, VALIGN_MIDDLE);
@@ -87,7 +102,7 @@ static void _Render_2Line(const char *text) {
   window_list[0].x_offset = 0;
   window_list[1].x_offset = 0;
 
-  next_textmode_win = (win_idx == 0) ? 1 : 0;
+  s_next_textmode_win = (win_idx == 0) ? 1 : 0;
 }
 
 /**
@@ -231,7 +246,6 @@ static void _Meta_RenderToWin(uint8_t idx) {
 
   LED_Window *win = &window_list[2];
   uint8_t needs_scroll = (win->canvas.width > win->w);
-  // Window_SetAlignment(2, needs_scroll ? ALIGN_LEFT : ALIGN_CENTER);
   if (needs_scroll) {
     win->x_offset = win->w;
   } else {
@@ -355,30 +369,25 @@ void UI_Manager_SetMode_2Line(void) {
 
   g_curr_ui_mode = UI_MODE_2_Line;
   _ApplyDefaultFont();
+  s_next_textmode_win = 0; // 重置双行文本交替起点
 
-  // 双行窗口的 y 坐标根据系统模式分配：
-  //   - protocol_mode: LyricWM 接管 y 偏移计算（_RecalcOffsetYByTimeOrder），
-  //     所有歌词窗口 y 基值必须相同
-  //   - text_mode: _Render_2Line 手动交换 y 坐标来实现新行在下，
-  //     窗口 y 基值不相同
-  if (g_curr_sys_mode == SYS_MODE_PROTOCOL_MODE) {
-    Window_Config(0, 0, 0, 192, 16);
-    Window_Config(1, 0, 0, 192, 16);
-  } else {
+  // 双行窗口的 y 坐标根据系统模式/协议内文本子模式分配：
+  //   - protocol_mode（歌词）: LyricWM 接管 y 偏移计算
+  //     （_RecalcOffsetYByTimeOrder），所有歌词窗口 y 基值必须相同
+  //   - text_mode / 协议内文本子模式: _Render_2Line 手动交换 y 坐标
+  //     来实现新行在下，窗口 y 基值不相同
+  uint8_t use_text_layout =
+      (g_curr_sys_mode == SYS_MODE_TXT_MODE || s_proto_text_active);
+  if (use_text_layout) {
     Window_Config(0, 0, 0, 192, 16);
     Window_Config(1, 0, 16, 192, 16);
+    LyricWM_Init(0); // 停用歌词（子模式下本就不渲染，纯防御）
+  } else {
+    Window_Config(0, 0, 0, 192, 16);
+    Window_Config(1, 0, 0, 192, 16);
+    LyricWM_Init(2);
   }
-  LyricWM_Init(2);
 }
-
-// /** 设置单行模式（共享 1LineMid / 1LineBig） */
-// static void _SetMode_1Line(UI_Mode_t mode) {
-//   _UI_Cleanup_Current();
-//   g_curr_ui_mode = mode;
-//   _ApplyDefaultFont();
-//   Window_Config(0, 0, 0, 192, 32);
-//   LyricWM_Init(1);
-// }
 
 void UI_Manager_SetMode_1LineMid(void) {
   _UI_Cleanup_Current();
@@ -410,17 +419,23 @@ void UI_Manager_SetMode_MusicInfo(void) {
   Window_Config(1, 0, 0, 48, 16);   // [1] mm:ss 进度
   Window_Config(2, 48, 0, 144, 16); // [2] title/artist/album 轮换
 
-  LyricWM_Init(1);
-
   // 初始化缓存
   s_last_progress_sec = 0;
 
-  // 重建并预渲染元数据第 0 条
+  // 重建并预渲染元数据第 0 条（子模式下也照常，方便退出后继续使用）
   _Meta_RebuildPool();
   _Meta_RenderToWin(0);
+
+  // 仅按标志决定歌词行渲染是否启用：常规 LyricWM_Init(1)，子模式停用
+  LyricWM_Init(s_proto_text_active ? 0 : 1);
 }
 
 void UI_Manager_SetMode_HomeLife(void) {
+  // 本函数不总是经过 _UI_Cleanup_Current（同在 HomeLife 时走
+  // 12/24H toggle 快捷分支直接返回），因此这里补统一退出子模式。
+  if (!s_entering_proto_text)
+    s_proto_text_active = 0;
+
   // 12/24H toggle：如果当前已在 HomeLife 模式，切换格式后直接返回
   if (g_curr_ui_mode == UI_MODE_HOME_LIFE) {
     Env_Manager_SetFormat((g_time_format_config == TIME_FORMAT_24H)
@@ -444,6 +459,82 @@ void UI_Manager_SetMode_HomeLife(void) {
 
   _Reset_HomeLife_Cache();
   LyricWM_Init(0); // used_lyric_lines=0，LyricWM_RenderMgr 跳过歌词
+}
+
+// ========== 协议内文本模式（0x16 驱动）==========
+
+uint8_t UI_Manager_IsProtocolTextMode(void) { return s_proto_text_active; }
+
+void UI_Manager_EnterProtocolTextMode(void) {
+  if (s_proto_text_active)
+    return; // 幂等：已处于子模式则仅刷新文本
+  s_proto_text_active = 1;
+
+  // 转场保护：以下 SetMode 内部的 _UI_Cleanup_Current 若清掉
+  // s_proto_text_active，会中断"进入子模式"本身（标志被清零），
+  // 故转场期间跳过清理，结束后恢复。
+  s_entering_proto_text = 1;
+  switch (g_curr_ui_mode) {
+  case UI_MODE_2_Line:
+    UI_Manager_SetMode_2Line(); // 标志已置 → 文本 y0/16 布局 + LyricWM_Init(0)
+    break;
+  case UI_MODE_MUSIC_INFO:
+    UI_Manager_SetMode_MusicInfo(); // 正常初始化，仅末尾 LyricWM_Init(0)
+    break;
+  case UI_MODE_1_LINE_MID_FONT:
+  case UI_MODE_1_LINE_BIG_FONT:
+  case UI_MODE_HOME_LIFE:
+    // 布局与 sys_mode 无关，子模式下 LyricWM_RenderMgr 不执行 → 无需重置
+    break;
+  default:
+    UI_Manager_SetMode_2Line();
+    break;
+  }
+  s_entering_proto_text = 0;
+}
+
+void UI_Manager_ExitProtocolTextMode(void) {
+  if (!s_proto_text_active)
+    return;
+  s_proto_text_active = 0;
+  // 子模式生命周期内 UI 模式不变（任何模式切换都会先经 _UI_Cleanup_Current
+  // 清除子模式标志即退出子模式），故无需保存进入前模式，直接用当前模式恢复。
+  switch (g_curr_ui_mode) {
+  case UI_MODE_2_Line:
+    UI_Manager_SetMode_2Line(); // 标志已清 → 协议 y0/0 + LyricWM_Init(2)
+    break;
+  case UI_MODE_MUSIC_INFO:
+    UI_Manager_SetMode_MusicInfo(); // 标志已清 → LyricWM_Init(1)，歌词恢复
+    break;
+  case UI_MODE_1_LINE_MID_FONT:
+    // 子模式下 win0 被 _Render_1Line 画过文本，画布需重绘；
+    // SetMode_1LineMid 内部 _Reset_HomeLife_Cache 强制刷新 win1/win2
+    UI_Manager_SetMode_1LineMid();
+    break;
+  case UI_MODE_1_LINE_BIG_FONT:
+    UI_Manager_SetMode_1LineBig(); // 重绘大字体歌词窗口
+    break;
+  default:
+    break; // HomeLife 未动过（脏更新缓存仍在），无需恢复
+  }
+}
+
+void UI_Manager_OnProtocolTextReceived(const uint8_t *payload, uint16_t len) {
+  UI_Manager_EnterProtocolTextMode();
+
+  static char s_buf[LYRIC_TEXT_SIZE];
+  uint16_t n = (len < LYRIC_TEXT_SIZE - 1) ? len : LYRIC_TEXT_SIZE - 1;
+  memcpy(s_buf, payload, n);
+  s_buf[n] = '\0';
+
+  // 子模式生命周期内 UI 模式不变（切换模式即退出子模式），
+  // 用 g_curr_ui_mode 直接表达"渲染跟随当前实际布局"。
+  if (g_curr_ui_mode == UI_MODE_MUSIC_INFO) {
+    _ApplyDefaultFont();
+    _Render_1Line(s_buf, C_RED); // MUSIC_INFO 子模式 → 单行渲染到 win0
+  } else {
+    UI_Manager_OnTextLineReceived(s_buf);
+  }
 }
 
 void UI_Manager_NextUIMode(void) {
@@ -477,15 +568,16 @@ void UI_Manager_NextUIMode(void) {
 void UI_Manager_SetSysMode(Sys_Mode_t mode) {
   if (mode == g_curr_sys_mode)
     return;
+  // 手动切换系统模式 → 退出协议内文本子模式（含恢复进入前布局）
+  UI_Manager_ExitProtocolTextMode();
   g_curr_sys_mode = mode;
 
   if (g_curr_ui_mode == UI_MODE_2_Line) {
-    UI_Manager_SetMode_2Line();
+    UI_Manager_SetMode_2Line(); // 重建 2Line 布局以适配新 sys_mode
+  } else if (g_curr_ui_mode == UI_MODE_MUSIC_INFO) {
+    UI_Manager_SetMode_HomeLife(); // MusicInfo 仅存在于 protocol 模式
   } else {
     LyricWM_Reset();
-  }
-  if (g_curr_ui_mode == UI_MODE_MUSIC_INFO) {
-    UI_Manager_SetMode_HomeLife();
   }
 }
 
@@ -544,6 +636,11 @@ void UI_Manager_Tick(void) {
     UI_Manager_OnMusicChanged();
   }
 
+  // Step 1.6: 全局播放时间轴推进（每帧一次，与渲染路径解耦）
+  //   LyricWM_RenderMgr 不再负责推进时间轴；need_commit 短路 /
+  //   协议内文本子模式 / 息屏 均不影响时间轴，防止歌词与进度冻结
+  LyricWM_UpdatePlayTime();
+
   // 息屏：跳过渲染和提交
   if (s_screen_off)
     return;
@@ -565,7 +662,8 @@ void UI_Manager_Tick(void) {
   }
 
   // Step 3: 窗口/歌词渲染提交
-  if (g_curr_sys_mode == SYS_MODE_TXT_MODE) {
+  //   协议内文本子模式下，与 TXT_MODE 一样走 WindowManager_Process()
+  if (g_curr_sys_mode == SYS_MODE_TXT_MODE || s_proto_text_active) {
     WindowManager_Process();
   } else {
     LyricWM_RenderMgr();
