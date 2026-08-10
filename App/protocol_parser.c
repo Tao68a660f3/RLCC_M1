@@ -108,8 +108,10 @@ void Protocol_Dispatcher(ProtocolPacket *pkt) {
   case 0x13:
   case 0x14:
   case 0x15:
-  case 0x16:
     Lyric_OnContentReceived(pkt->cmd, pkt->payload, pkt->len);
+    break;
+  case 0x16:
+    // Protocol_OnTextReceived(...);
     break;
   case 0x20:
     RTC_OnTimeSyncReceived(pkt->payload, pkt->len);
