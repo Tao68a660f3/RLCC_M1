@@ -48,18 +48,24 @@ typedef struct {
   char album[MAX_METADATA_STR_LEN];
 
   // 时间轴
-  uint32_t remote_time_ms;    // 最近同步包中的播放进度 (ms)
-  uint32_t total_ms;          // 歌曲总时长
-  uint32_t upstream_tick_ms;  // C# 发包时刻的 Environment.TickCount32
-  int32_t clock_offset_ms;    // C#时钟 - STM32时钟 偏差 (低通滤波)
-  uint32_t base_remote_time;  // 基准包进度锚点 (与外推共用，正常播放绝不覆盖)
-  uint32_t base_remote_tick;  // 基准包 C# tick 锚点
-  uint32_t local_send_tick;   // 基准包映射到 STM32 本地 tick 锚点
-  int32_t min_obs_latency_ms; // 运行途中最优观测延迟
-                              // (obs=local_rx-upstream_tick 的最小值)
-  uint16_t playback_speed;    // 播放倍速 (Q8，256=1.0x，范围[128,768])
+  uint32_t remote_time_ms;   // 最近同步包中的播放进度 (ms)
+  uint32_t total_ms;         // 歌曲总时长
+  uint32_t upstream_tick_ms; // C# 发包时刻的 Environment.TickCount32
+  int32_t clock_offset_ms;   // C#时钟 - STM32时钟 偏差 (低通滤波)
+  uint32_t base_remote_time; // 基准包进度锚点 (与外推共用，正常播放绝不覆盖)
+  uint32_t base_remote_tick; // 基准包 C# tick 锚点
+  uint32_t local_send_tick;  // 基准包映射到 STM32 本地 tick 锚点
+  int32_t
+      best_obs_latency_ms; // 运行途中最优观测延迟
+                           // (obs=upstream_tick-local_rx 的历史最大值；
+                           //  网络越好 obs 越大；
+                           //  best_obs_valid==false 时数值无效，不得参与判断)
+  uint16_t playback_speed; // 播放倍速 (Q8，256=1.0x，范围[128,768])
   uint8_t playback_speed_changed; // 变速事件标志 (1 帧有效，供渲染端感知)
   uint8_t clock_synced;           // 是否已完成首次时钟同步
+                                  // (播放时间锚点是否建立)
+  uint8_t best_obs_valid;         // 是否已获得过有效的历史最佳网络观测
+                                  // (与 clock_synced 概念独立；切歌时复位)
   uint8_t is_playing;
 
   // 歌词池
