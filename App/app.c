@@ -47,7 +47,8 @@ void App_Init() {
   LyricService_Init(); // 歌词服务：初始化 g_sys（playback_speed=1.0x 等），
                        // 否则全局 g_sys 处于 .bss 清零态，变速测速除零
                        // HardFault
-  COM_Init(&huart1);
+  // 注：COM_Init(&huart1) 已提前到 main.c 中 MX_USART1_UART_Init() 之后调用，
+  //     使 RX DMA 尽早启动，避免对端先上电时数据丢失。
   W25Q64_Init(&hspi1);
   Font_Config_Init();
 

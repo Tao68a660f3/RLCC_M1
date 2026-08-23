@@ -29,6 +29,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "app.h"
+#include "com_manager.h"
 #include "ir_remote.h"
 #include "stdio.h"
 #include "system_utils.h"
@@ -98,6 +99,10 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_USART1_UART_Init();
+  /* 尽早启动 USART1 RX DMA + IDLE：对端（BLE 模块）可能先上电并已发出启动信息，
+     RX DMA 必须在外设使能后尽快接管，避免启动窗口内 ORE/数据丢失。
+     注意：此行为 CubeMX 生成区手动插入，重新生成工程时需保留。 */
+  COM_Init(&huart1);
   MX_I2C1_Init();
   MX_SPI1_Init();
   MX_TIM2_Init();

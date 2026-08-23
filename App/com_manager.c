@@ -14,28 +14,94 @@ static volatile uint16_t last_read_idx = 0;
 
 /**
  * @brief 初始化串口管理逻辑
+ *
+ * 关键顺序：清理残留状态 → 启动 Circular DMA 接收 → 最后开启 IDLE 中断。
+ * 这样对端（BLE 透传模块）即使先上电、在 STM32 应用初始化完成前就发出
+ * "READY\r\n"，也能被环形缓冲区捕获；残留 ORE/IDLE 标志不会在 DMA 尚未
+ * 就绪时提前触发错误或空闲中断。
  */
 void COM_Init(UART_HandleTypeDef *huart) {
   p_huart = huart;
 
-  // 1. 开启串口空闲中断
-  __HAL_UART_ENABLE_IT(p_huart, UART_IT_IDLE);
+  // 1. 清理 USART 残留错误/IDLE 标志（读 SR 再读 DR 的硬件清除方式）
+  __HAL_UART_CLEAR_OREFLAG(huart);   // 同时清除 FE/NE/ORE
+  __HAL_UART_CLEAR_IDLEFLAG(huart);  // 清除 IDLE（同一机制，防御性再清一次）
 
-  // 2. 启动 DMA 接收
-  HAL_UART_Receive_DMA(p_huart, rx_raw_buffer, RX_BUF_SIZE);
+  // 2. 清理 DMA2 Stream5 残留中断标志（Stream5 对应 HAL 的 *_1_5 组标志）
+  if (huart->hdmarx != NULL) {
+    __HAL_DMA_CLEAR_FLAG(huart->hdmarx,
+                         DMA_FLAG_FEIF1_5 | DMA_FLAG_DMEIF1_5 |
+                         DMA_FLAG_TEIF1_5 | DMA_FLAG_HTIF1_5 |
+                         DMA_FLAG_TCIF1_5);
+  }
+
+  // 3. 启动 Circular DMA 接收（内部会再清一次 ORE，再使能 DMAR/EIE）
+  HAL_UART_Receive_DMA(huart, rx_raw_buffer, RX_BUF_SIZE);
+
+  // 4. 最后开启 IDLE 中断
+  __HAL_UART_ENABLE_IT(huart, UART_IT_IDLE);
+
+  // 消费指针复位（防御性，正常冷启动 .bss 已清零）
+  last_read_idx = 0;
+  cmd_ready = 0;
 }
 
 /**
  * @brief 处理串口空闲中断回调
  * 应在 stm32f4xx_it.c 的 USARTx_IRQHandler 中被手动调用
+ *
+ * 说明：DMA 为 Circular 模式，IDLE 只需清标志并置提醒信号，
+ * 不能在这里停止/重启 DMA（否则会破坏环形缓冲的连续性）。
  */
 void COM_UART_IDLE_Callback(UART_HandleTypeDef *huart) {
-  // 假设你之前定义了 p_huart 指向你的串口句柄
+  if (p_huart == NULL) // 防止 IRQ 早于 COM_Init 触发
+    return;
   if (huart->Instance == p_huart->Instance) {
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_IDLE)) {
       __HAL_UART_CLEAR_IDLEFLAG(huart);
       cmd_ready = 1; // 只是个提醒信号
     }
+  }
+}
+
+/**
+ * @brief UART 错误回调（覆盖 HAL 弱定义）
+ *
+ * DMA 模式下，任意 ORE/FE/NE/DMA 错误都会被 HAL 视为阻塞错误：HAL 会
+ * 中止接收（RxState 回到 READY、清除 DMAR、中止 DMA 流）并调用本回调。
+ * 若这里不恢复接收链路，RX DMA 将永久停止。此回调负责完整重启 RX。
+ */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+  if (huart->Instance != USART1)
+    return;
+
+  // 1. 兜底：确保 DMA 流已停止（正常错误路径下 HAL 已中止，这里防漏）
+  if (huart->hdmarx != NULL) {
+    if (huart->hdmarx->State == HAL_DMA_STATE_BUSY) {
+      HAL_DMA_Abort(huart->hdmarx);
+    }
+    // 2. 清理 DMA2 Stream5 残留中断标志
+    __HAL_DMA_CLEAR_FLAG(huart->hdmarx,
+                         DMA_FLAG_FEIF1_5 | DMA_FLAG_DMEIF1_5 |
+                         DMA_FLAG_TEIF1_5 | DMA_FLAG_HTIF1_5 |
+                         DMA_FLAG_TCIF1_5);
+  }
+
+  // 3. 清除 USART 残留错误/IDLE 标志，防止恢复后立即再次触发错误中断
+  __HAL_UART_CLEAR_OREFLAG(huart);
+  __HAL_UART_CLEAR_IDLEFLAG(huart);
+  huart->ErrorCode = HAL_UART_ERROR_NONE;
+
+  // 4. 兜底：确保 HAL 状态机处于可重启状态（正常错误路径已置 READY）
+  huart->RxState = HAL_UART_STATE_READY;
+
+  // 5. 环形缓冲从 0 重新开始，复位消费指针与提醒信号
+  last_read_idx = 0;
+  cmd_ready = 0;
+
+  // 6. 重新启动 Circular DMA 接收，并重新开启 IDLE 中断
+  if (HAL_UART_Receive_DMA(huart, rx_raw_buffer, RX_BUF_SIZE) == HAL_OK) {
+    __HAL_UART_ENABLE_IT(huart, UART_IT_IDLE);
   }
 }
 
