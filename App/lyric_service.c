@@ -108,11 +108,11 @@ void LyricService_ClearPool(void) {
   g_sys.base_remote_time = 0;
   g_sys.base_remote_tick = 0;
   g_sys.local_send_tick = 0;
-  g_sys.playback_speed = SPEED_NORMAL_Q8; // 新歌按 1.0x 起步
-  g_sys.playback_speed_changed = 0;
+  // g_sys.playback_speed = SPEED_NORMAL_Q8; // 新歌按 1.0x 起步
+  // g_sys.playback_speed_changed = 0;
   g_sys.clock_synced = 0;
-  g_sys.best_obs_valid = 0; // 每首歌重新建立最佳网络观测
-                            // (best_obs_latency_ms 旧值残留但不参与判断)
+  // g_sys.best_obs_valid = 0; // 每首歌重新建立最佳网络观测
+  //                           // (best_obs_latency_ms 旧值残留但不参与判断)
 
   // 重置变速滑窗与增量跟踪
   s_win_pkt = 0;

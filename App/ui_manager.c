@@ -70,7 +70,7 @@ static void _UI_Cleanup_Current(void) {
 static void _SetScrollIfNeeded(uint8_t win_idx) {
   LED_Window *win = &window_list[win_idx];
   if (win->canvas.width > win->w) {
-    win->scroll_divider = 1;
+    win->scroll_divider = 2;
     win->scroll_step = -1;
     Window_SetAlignment(win_idx, ALIGN_LEFT);
   } else {
@@ -251,7 +251,7 @@ static void _Meta_RenderToWin(uint8_t idx) {
   } else {
     Window_SetAlignment(2, ALIGN_CENTER);
   }
-  win->scroll_divider = needs_scroll ? 1 : 0;
+  win->scroll_divider = needs_scroll ? 2 : 0;
   win->scroll_step = needs_scroll ? -1 : 0;
   win->scroll_counter = 0;
 }
@@ -321,7 +321,7 @@ static void _Render_MetaRotation(void) {
   if (win->scroll_divider == 0) {
     do_switch = (elapsed >= 10000); // 居中不滚动 → 10 秒超时切换
   } else {
-    do_switch = (win->scroll_counter >= 3); // 滚动 → 2 轮后切换
+    do_switch = (win->scroll_counter >= 3); // 滚动 → 3 轮后切换
   }
 
   if (do_switch) {
