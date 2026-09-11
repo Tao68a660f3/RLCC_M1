@@ -166,7 +166,7 @@ static void _Render_1LineMid_Tick(void) {
 }
 
 static void _Render_HomeLife_Tick(void) {
-  HOME_LIFE_UPDATE(0, s_cache_time, g_str_time, FONT_ASCV_20, C_YELLOW);
+  HOME_LIFE_UPDATE(0, s_cache_time, g_str_time, FONT_ASCVE_20, C_YELLOW);
   HOME_LIFE_UPDATE(1, s_cache_date, g_str_date_std, FONT_ASC_0805, C_GREEN);
   HOME_LIFE_UPDATE_AMPM(s_cache_ampm, g_str_ampm, FONT_ASC_0805, C_YELLOW);
   HOME_LIFE_UPDATE(3, s_cache_week, g_str_week_en, FONT_ASC_0805, C_GREEN);

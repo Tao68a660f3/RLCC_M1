@@ -10,23 +10,26 @@
 
 /* --- ASCCII 变宽字库 --- */
 #define FONT_ADDR_ASC0805 0x000000
-#define FONT_ADDR_ASC16 0x001000
-#define FONT_ADDR_ASC16S 0x003000
-#define FONT_ADDR_ASC1608 0x005000
-#define FONT_ADDR_ASC1610 0x007000
-#define FONT_ADDR_ASC1616 0x00A000
+#define FONT_ADDR_ASC12 0x001000
+#define FONT_ADDR_ASC1212 0x002000
+#define FONT_ADDR_ASC16 0x004000
+#define FONT_ADDR_ASC16G 0x006000
+#define FONT_ADDR_ASC1608 0x008000
+#define FONT_ADDR_ASCVE14 0x00A000
 #define FONT_ADDR_ASC2010 0x00D000
-#define FONT_ADDR_ASC2410 0x010000
-#define FONT_ADDR_ASC2412 0x014000
-#define FONT_ADDR_ASCVE20 0x018000
+#define FONT_ADDR_ASCVE20 0x010000
+#define FONT_ADDR_ASC2410 0x014000
+#define FONT_ADDR_ASC2412 0x018000
+#define FONT_ADDR_ASC24G 0x01C000
 
 /* --- GBK 汉字字库 --- */
-#define FONT_ADDR_GBK1616H 0x01C000
-#define FONT_ADDR_GBK1616S 0x0C9000
-#define FONT_ADDR_GBK1624M 0x176000
-#define FONT_ADDR_GBK1624Y 0x279000
-#define FONT_ADDR_GBK2432S 0x37C000
-#define FONT_ADDR_GBK2432H 0x582000
+#define FONT_ADDR_GBK1212S 0x020000
+#define FONT_ADDR_GBK1616H 0x0A2000
+#define FONT_ADDR_GBK1616S 0x14F000
+#define FONT_ADDR_GBK1624M 0x1FC000
+#define FONT_ADDR_GBK1624Y 0x2FF000
+#define FONT_ADDR_GBK2424S 0x402000
+#define FONT_ADDR_GBK2432S 0x587000
 
 /* ====================================================================
  * 字体序号宏定义
@@ -38,27 +41,30 @@
 
 /* --- ASCII 字体序号 --- */
 #define FONT_ASC_0805 0
-#define FONT_ASC_16 1
-#define FONT_ASC_16S 2
-#define FONT_ASC_1608 3
-#define FONT_ASC_1610 4
-#define FONT_ASC_1616 5
-#define FONT_ASC_2010 6
-#define FONT_ASC_2410 7
-#define FONT_ASC_2412 8
-#define FONT_ASCV_20 9
+#define FONT_ASC_12 1
+#define FONT_ASC_1212 2
+#define FONT_ASC_16 3
+#define FONT_ASC_16G 4
+#define FONT_ASC_1608 5
+#define FONT_ASCVE_14 6
+#define FONT_ASC_2010 7
+#define FONT_ASCVE_20 8
+#define FONT_ASC_2410 9
+#define FONT_ASC_2412 10
+#define FONT_ASC_24G 11
 
-#define FONT_ASC_COUNT 10 /* ASCII 字体总数 */
+#define FONT_ASC_COUNT 12 /* ASCII 字体总数 */
 
 /* --- GBK 字体序号 --- */
-#define FONT_GBK_1616H 0
-#define FONT_GBK_1616S 1
-#define FONT_GBK_1624M 2
-#define FONT_GBK_1624Y 3
-#define FONT_GBK_2432S 4
-#define FONT_GBK_2432H 5
+#define FONT_GBK_1212S 0
+#define FONT_GBK_1616H 1
+#define FONT_GBK_1616S 2
+#define FONT_GBK_1624M 3
+#define FONT_GBK_1624Y 4
+#define FONT_GBK_2424S 5
+#define FONT_GBK_2432S 6
 
-#define FONT_GBK_COUNT 6 /* GBK 字体总数 */
+#define FONT_GBK_COUNT 7 /* GBK 字体总数 */
 
 /* ====================================================================
  * 函数声明

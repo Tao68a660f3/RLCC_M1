@@ -2,21 +2,24 @@ import os
 
 files = [
     "ASC0805.BIN",
+    "ASC12.BIN",
+    "ASC1212.BIN",
     "ASC16.BIN",
-    "ASC16S.BIN",
+    "ASC16G.BIN",
     "ASC1608.BIN",
-    "ASC1610.BIN",
-    "ASC1616.BIN",
+    "ASCVE14.BIN",
     "ASC2010.BIN",
+    "ASCVE20.BIN",
     "ASC2410.BIN",
     "ASC2412.BIN",
-    "ASCVE20.BIN",
+    "ASC24G.BIN",
+    "GBK1212S.BIN",
     "GBK1616H.BIN",
     "GBK1616S.BIN",
     "GBK1624M.BIN",
     "GBK1624Y.BIN",
+    "GBK2424S.BIN",
     "GBK2432S.BIN",
-    "GBK2432H.BIN",
 ]
 
 base_path = r"..\fonts\\"
