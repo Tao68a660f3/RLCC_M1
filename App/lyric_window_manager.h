@@ -1,10 +1,9 @@
 /**
  * @file lyric_window_manager.h
- * @brief 歌词窗口管理接口：播放时间轴读取 + 歌词渲染调度
+ * @brief 歌词窗口管理接口：播放时间轴采样/读取 + 歌词渲染调度
  *
- * 时间轴语义见 lyric_window_manager.c：s_pi_time 为全局播放时间轴，
- * 其生命周期由 _UpdateSmoothTime 边界条件（未同步/暂停/变速/Seek）
- * 管理，UI 模式切换不清零。
+ * 时间轴语义见 lyric_window_manager.c：s_curr_play_time_ms 是
+ * sync_algorithm (Sync_GetTime) 的每帧快照，UI 模式切换不清零。
  */
 
 #ifndef __LYRIC_WINDOW_MANAGER_H
@@ -41,9 +40,9 @@ extern LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
 void LyricWM_Init(uint8_t line_count);
 void LyricWM_Reset(void);
 uint32_t Get_Current_PlayTime(void);
-/** 每帧推进全局播放时间轴（PI 平滑外推）。
- *  由 UI_Manager_Tick 每帧统一调用一次，与渲染路径解耦：
- *  即使 need_commit 短路 / 协议内文本子模式 / 息屏，时间轴也照常推进。
+/** 每帧采样一次全局播放时间轴（sync_algorithm / Sync_GetTime）。
+ *  由 UI_Manager_Tick Step1.6 每帧统一调用一次，与渲染路径解耦：
+ *  即使 need_commit 短路 / 协议内文本子模式 / 息屏，采样也照常进行。
  */
 void LyricWM_UpdatePlayTime(void);
 void LyricWM_RenderMgr(void);

@@ -9,6 +9,10 @@ uint8_t rx_raw_buffer[RX_BUF_SIZE]; // DMA直接使用的原始缓冲区
 
 volatile uint8_t cmd_ready = 0;
 
+// 全链路延迟测试(0x1F/0xAF)时间戳（见 com_manager.h / latency_service.c）
+volatile uint32_t g_uart_last_rx_cyccnt = 0;
+volatile uint8_t g_uart_rx_ts_valid = 0;
+
 // 消费者状态
 static volatile uint16_t last_read_idx = 0;
 
@@ -44,6 +48,7 @@ void COM_Init(UART_HandleTypeDef *huart) {
   // 消费指针复位（防御性，正常冷启动 .bss 已清零）
   last_read_idx = 0;
   cmd_ready = 0;
+  g_uart_rx_ts_valid = 0; // 尚无有效 IDLE 打点
 }
 
 /**
@@ -59,6 +64,9 @@ void COM_UART_IDLE_Callback(UART_HandleTypeDef *huart) {
   if (huart->Instance == p_huart->Instance) {
     if (__HAL_UART_GET_FLAG(huart, UART_FLAG_IDLE)) {
       __HAL_UART_CLEAR_IDLEFLAG(huart);
+      // 延迟测试时间戳：一帧收完的瞬间，中断里只存一个周期数，开销极小
+      g_uart_last_rx_cyccnt = DWT->CYCCNT;
+      g_uart_rx_ts_valid = 1;
       cmd_ready = 1; // 只是个提醒信号
     }
   }
@@ -98,6 +106,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
   // 5. 环形缓冲从 0 重新开始，复位消费指针与提醒信号
   last_read_idx = 0;
   cmd_ready = 0;
+  g_uart_rx_ts_valid = 0; // 重启接收后需等新的 IDLE 打点
 
   // 6. 重新启动 Circular DMA 接收，并重新开启 IDLE 中断
   if (HAL_UART_Receive_DMA(huart, rx_raw_buffer, RX_BUF_SIZE) == HAL_OK) {

@@ -1,13 +1,14 @@
 /**
  * @file lyric_service.h
- * @brief 歌词服务：协议解析 + 全局时间轴锚点维护 + 歌词池管理
+ * @brief 歌词服务：协议解析 + 时间轴输入转发 + 歌词池管理
  *
  * 解析 C# 端下发的歌词协议包（0x10~0x15），把结果写入 g_sys：
  *  - 元数据 (title/artist/album)
- *  - 时间轴锚点 (base_remote_time / clock_offset / playback_speed 等)
+ *  - 时间轴输入：0x11 字段原样转交 sync_algorithm (Sync_OnPacketAt)
  *  - 歌词池 (lyric_pool / sorted_lyrics)
  *
- * 时间轴锚点供 lyric_window_manager.c 外推为平滑播放时间；
+ * 时间轴状态与播放位置的唯一权威是 sync_algorithm
+ * （由 lyric_window_manager.c 每帧采样 Sync_GetTime()）；
  * 歌词池供其渲染调度使用。
  */
 
@@ -47,26 +48,12 @@ typedef struct {
   char artist[MAX_METADATA_STR_LEN];
   char album[MAX_METADATA_STR_LEN];
 
-  // 时间轴
+  // 时间轴输入镜像（0x11 原始量，供诊断 / 歌词池时长预测使用；
+  // 时间轴状态与播放位置的唯一权威是 sync_algorithm，见 Sync_GetTime()）
   uint32_t remote_time_ms;   // 最近同步包中的播放进度 (ms)
-  uint32_t total_ms;         // 歌曲总时长
-  uint32_t upstream_tick_ms; // C# 发包时刻的 Environment.TickCount32
-  int32_t clock_offset_ms;   // C#时钟 - STM32时钟 偏差 (低通滤波)
-  uint32_t base_remote_time; // 基准包进度锚点 (与外推共用，正常播放绝不覆盖)
-  uint32_t base_remote_tick; // 基准包 C# tick 锚点
-  uint32_t local_send_tick;  // 基准包映射到 STM32 本地 tick 锚点
-  int32_t
-      best_obs_latency_ms; // 运行途中最优观测延迟
-                           // (obs=upstream_tick-local_rx 的历史最大值；
-                           //  网络越好 obs 越大；
-                           //  best_obs_valid==false 时数值无效，不得参与判断)
-  uint16_t playback_speed; // 播放倍速 (Q8，256=1.0x，范围[128,768])
-  uint8_t playback_speed_changed; // 变速事件标志 (1 帧有效，供渲染端感知)
-  uint8_t clock_synced;           // 是否已完成首次时钟同步
-                                  // (播放时间锚点是否建立)
-  uint8_t best_obs_valid;         // 是否已获得过有效的历史最佳网络观测
-                                  // (与 clock_synced 概念独立；切歌时复位)
-  uint8_t is_playing;
+  uint32_t total_ms;         // 歌曲总时长 (ms)
+  uint32_t upstream_tick_ms; // C# 发包时刻的 Environment.TickCount
+  uint8_t is_playing;        // 最近同步包中的播放状态
 
   // 歌词池
   uint32_t active_count;
@@ -82,9 +69,14 @@ extern SystemStatus g_sys;
 extern uint8_t media_updated;
 
 // 接口函数
-void LyricService_Init(void);
-void LyricService_ClearPool(void); // 清空歌词池（切歌时重置所有状态）
+void LyricService_Init(void); // 内部调用 Sync_Init() 初始化时间轴模块
+/* 清空歌词池（切歌时重置歌词相关状态）。
+ * 注意：绝不复位 sync_algorithm —— 新歌首包会被算法自身的硬复位
+ * (|误差| ≥ SYNC_HARD_RESET_FAST_MS) 直接接管，复位反而会清空已建立的
+ * epoch 基线 / 钟差 / 倍速学习。详见 lyric_service.c 内注释。 */
+void LyricService_ClearPool(void);
 void Lyric_OnMetadataReceived(uint8_t *payload, uint16_t len);
+/* 0x11 时间同步包：解析后原样转交 sync_algorithm (Sync_OnPacketAt) */
 void Lyric_OnSyncReceived(uint8_t *payload, uint16_t len);
 void Lyric_OnContentReceived(uint8_t cmd, uint8_t *payload, uint16_t len);
 void RTC_OnTimeSyncReceived(uint8_t *payload, uint16_t len);

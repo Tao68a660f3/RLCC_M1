@@ -102,6 +102,7 @@ int main(void)
   /* 尽早启动 USART1 RX DMA + IDLE：对端（BLE 模块）可能先上电并已发出启动信息，
      RX DMA 必须在外设使能后尽快接管，避免启动窗口内 ORE/数据丢失。
      注意：此行为 CubeMX 生成区手动插入，重新生成工程时需保留。 */
+  DWT_Init(); /* 必须早于 COM_Init：IDLE 中断要用 DWT->CYCCNT 打延迟测试时间戳 */
   COM_Init(&huart1);
   MX_I2C1_Init();
   MX_SPI1_Init();
@@ -113,7 +114,8 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim2);
 
   printf("SYSTEM STARTING...\r\n");
-  DWT_Init();
+  /* 注：DWT_Init() 已提前到 COM_Init() 之前调用（见上方外设初始化区），
+     以保证 USART1 IDLE 中断打点从第一帧起就有效。 */
   App_Init();
   printf("SYSTEM STARTED.\r\n");
 

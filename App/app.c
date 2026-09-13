@@ -44,9 +44,8 @@ static char Msg_02[] = {0x57, 0x65, 0x6C, 0x63, 0x6F, 0x6D, 0x65, 0x20,
                         0x54, 0x6F, 0x20, 0x55, 0x73, 0x65, 0x21, 0x00};
 
 void App_Init() {
-  LyricService_Init(); // 歌词服务：初始化 g_sys（playback_speed=1.0x 等），
-                       // 否则全局 g_sys 处于 .bss 清零态，变速测速除零
-                       // HardFault
+  LyricService_Init(); // 歌词服务：初始化 g_sys 并调用 Sync_Init() 初始化
+                       // 时间轴模块（sync_algorithm），必须早于收包处理
   // 注：COM_Init(&huart1) 已提前到 main.c 中 MX_USART1_UART_Init() 之后调用，
   //     使 RX DMA 尽早启动，避免对端先上电时数据丢失。
   W25Q64_Init(&hspi1);

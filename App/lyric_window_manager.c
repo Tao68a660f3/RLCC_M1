@@ -1,16 +1,18 @@
 /**
  * @file lyric_window_manager.c
- * @brief 歌词窗口管理：播放时间轴平滑外推 + 歌词渲染调度
+ * @brief 歌词窗口管理：播放时间轴采样 + 歌词渲染调度
  *
  * 职责分层：
- *  - lyric_service.c   : 协议解析与全局时间轴锚点 (g_sys) 维护；
- *  - 本文件：把锚点外推为平滑播放时间 (s_pi_time)，并驱动歌词窗口的
- *    填充 / 换行 / 高亮 / 滚动渲染。
+ *  - sync_algorithm.c  : 时间轴唯一权威（锚点+斜率模型、钟差/倍速学习、
+ *    暂停冻结、Seek/切歌硬复位、看门狗自愈）；
+ *  - lyric_service.c   : 只把 0x11 同步包转交算法，不持有任何时间轴状态；
+ *  - 本文件：每帧采样一次 Sync_GetTime() 作为播放时间 (s_curr_play_time_ms)，
+ *    并驱动歌词窗口的填充 / 换行 / 高亮 / 滚动渲染。
  *
  * 播放时间轴是全局系统状态：
- *  - s_pi_time / s_pi_last_tick 的生命周期由 _UpdateSmoothTime 的边界
- *    条件管理（未同步 / 暂停 / 变速 / Seek），UI 模式切换只清屏，
- *    不得清零，否则重进歌词界面会从 0 追赶当前进度。
+ *  - s_curr_play_time_ms 的取值完全由算法决定（未同步→0 / 暂停→权威冻结值 /
+ *    |误差|≤20ms 不动相位 / 大跳单包硬复位），UI 模式切换只清屏，
+ *    不参与时间轴推进。
  */
 
 #include "lyric_window_manager.h"
@@ -19,19 +21,15 @@
 #include "led_driver.h"
 #include "lyric_service.h"
 #include "mem_pool.h"
+#include "sync_algorithm.h"
 #include "window_manager.h"
 #include <stdint.h>
 #include <string.h>
 
 extern volatile uint8_t need_commit;
 
-/** 每帧一次平滑时间更新后，所有消费者直接读这个全局值 */
+/** 每帧一次采样后，所有消费者直接读这个全局值（来源：Sync_GetTime()） */
 static uint32_t s_curr_play_time_ms = 0;
-
-/** PI 平滑后的播放时间 (ms) —— 全局时间轴，UI 切换不清零 */
-static uint32_t s_pi_time = 0;
-/** 上次 PI 计算的墙钟 (ms) */
-static uint32_t s_pi_last_tick = 0;
 
 LyricWinConfig l_win_cfg[MAX_LYRIC_LINES];
 uint16_t g_lyric_progress = 0;
@@ -66,11 +64,11 @@ void LyricWM_Init(uint8_t line_count) {
 void LyricWM_Reset(void) {
   // 仅清屏与解绑（UI 模式切换 / 切歌共用）。
   //
-  // 注意：不得重置 PI 平滑状态 s_pi_time / s_pi_last_tick——
-  // 它们是全局时间轴，生命周期由 _UpdateSmoothTime 边界条件管理：
-  //   - 切歌：ClearPool → clock_synced=0 → 下帧自动清零并重建；
-  //   - 暂停：is_playing=0 → 冻结在最近已知进度；
-  //   - 变速/Seek：playback_speed_changed=1 → 硬跳对齐新锚点。
+  // 注意：不得重置 s_curr_play_time_ms —— 它是全局播放时间轴快照，
+  // 取值完全由 sync_algorithm (Sync_GetTime) 决定：
+  //   - 切歌：ClearPool 清空歌词池，新时间轴首包由算法硬复位接管；
+  //   - 暂停：算法冻结在权威暂停点；
+  //   - Seek/变速：算法自行相位斜坡 / 硬复位。
   // 若在此清零，切换 UI 模式（如 HomeLife → 歌词界面）时画面会
   // 从 0 开始追赶当前进度。
 
@@ -92,114 +90,27 @@ void LyricWM_Reset(void) {
   g_lyric_progress = 0;
 }
 
-/**
- * @brief 130FPS 时间轴算法：speed 感知外推 + PI 平滑控推进速率
- * 每帧由 LyricWM_UpdatePlayTime()（UI_Manager_Tick Step1.6）调用一次，
- * 与渲染路径（LyricWM_RenderMgr / WindowMgr）解耦。
- *
- * 原理：
- *   0x11 同步包在 Lyric_OnSyncReceived 中已建立锚点
- *   (base_remote_time / local_send_tick / playback_speed)，此后推算
- *   阶段完全不依赖 UDP 接收时刻 → 免疫网络延迟抖动。
- *
- *   目标值 target = base_remote_time + 墙钟流逝 × speed
- *   (含变速感知，与 C# 播放器速率同频)。
- *
- *   渲染端用 PI 平滑跟踪 target，分三种行为：
- *   - 正常播放：s_pi_time 以 speed 速率推进，误差用 P 项低通吸收
- *   - 变速确认：speed 更新 + 锚点重建 → target 拉开差距，
- *     P 项逐帧收敛（歌词平滑追赶，不瞬移）
- *   - Seek/暂停恢复：硬跳重建锚点 + playback_speed_changed 事件
- *     → s_pi_time 直接对齐 base_remote_time（瞬移接管）
- *
- * 边界：
- *   - 未完成首次同步 → 返回 0
- *   - 暂停 → 冻结在最近已知进度
- *   - 卡帧/异常间隔 → elapsed 钳制，防瞬移
- */
-// ===== 渲染端 PI 平滑调参 =====
-// P 项系数 (Q16)：调大→变速追赶快(输出偏抖)；调小→稳(追赶滞后)
-#define PI_KP_Q16 3200
-// 单帧 P 项补偿上限 (ms)：防异常误差(如一次大 Seek)导致歌词瞬移
-#define PI_COMP_MAX_MS 40
-// 单帧墙钟上限 (ms)：防长时间卡帧后恢复时的瞬移
-#define PI_FRAME_MAX_MS 100
-
-static void _UpdateSmoothTime(void) {
-  uint32_t now_tick = HAL_GetTick();
-
-  // 1. 边界拦截：未同步（切歌后 ClearPool 清 clock_synced，自动回到此路径）
-  if (!g_sys.clock_synced) {
-    s_curr_play_time_ms = 0;
-    s_pi_time = 0;
-    s_pi_last_tick = now_tick;
-    return;
-  }
-
-  // 2. 暂停：冻结在最近已知进度
-  if (!g_sys.is_playing) {
-    s_curr_play_time_ms = g_sys.base_remote_time;
-    s_pi_time = g_sys.base_remote_time;
-    s_pi_last_tick = now_tick;
-    return;
-  }
-
-  // 3. 变速/Seek 事件：直接对齐新锚点（硬跳接管），重置 PI
-  if (g_sys.playback_speed_changed) {
-    g_sys.playback_speed_changed = 0;
-    s_pi_time = g_sys.base_remote_time;
-    s_pi_last_tick = now_tick;
-  }
-
-  // 4. 目标 = 锚点 + 墙钟流逝 × speed（Q8，含变速感知）
-  uint32_t elapsed = now_tick - s_pi_last_tick;
-  if (elapsed > PI_FRAME_MAX_MS) {
-    elapsed = PI_FRAME_MAX_MS;
-    s_pi_last_tick = now_tick - elapsed; // 平移，避免累积误差
-  }
-  uint32_t target =
-      (uint32_t)((int64_t)g_sys.base_remote_time +
-                 (int64_t)((int32_t)now_tick - (int32_t)g_sys.local_send_tick) *
-                     (int32_t)g_sys.playback_speed / (int32_t)256);
-
-  // 5. 推进速率 = elapsed × speed（speed 感知，与锚点同步增长）
-  int32_t frame_step =
-      (int32_t)((int64_t)elapsed * g_sys.playback_speed / (int32_t)256);
-  s_pi_time = (uint32_t)((int32_t)s_pi_time + frame_step);
-
-  // 6. P 项误差补偿：低通吸收 target 与 s_pi_time 的偏差
-  int32_t err = (int32_t)target - (int32_t)s_pi_time;
-  int32_t comp = (int32_t)((int64_t)err * PI_KP_Q16 / 65536);
-  if (comp > PI_COMP_MAX_MS)
-    comp = PI_COMP_MAX_MS;
-  if (comp < -PI_COMP_MAX_MS)
-    comp = -PI_COMP_MAX_MS;
-  s_pi_time = (uint32_t)((int32_t)s_pi_time + comp);
-  s_pi_last_tick = now_tick;
-
-  // 7. 封顶总时长
-  if (g_sys.total_ms > 0 && s_pi_time > g_sys.total_ms)
-    s_curr_play_time_ms = g_sys.total_ms;
-  else
-    s_curr_play_time_ms = s_pi_time;
-}
-
-/**
- * @brief 读取当前播放时间 (ms)
- *
- * 注意：此函数已是轻量读全局变量，每帧可多次调用。
- *       实际平滑时间更新由 _UpdateSmoothTime 每帧仅执行一次。
- */
+/** 每帧一次采样后的播放时间 (ms) —— 全局时间轴，来源 Sync_GetTime()。
+ *  由 UI_Manager_Tick Step1.6 每帧调用 LyricWM_UpdatePlayTime() 更新一次，
+ *  与渲染路径 (LyricWM_RenderMgr / WindowMgr) 解耦。 */
 uint32_t Get_Current_PlayTime(void) { return s_curr_play_time_ms; }
 
 /**
- * @brief 每帧推进全局播放时间轴（薄封装）
+ * @brief 每帧采样一次全局播放时间轴（唯一来源：sync_algorithm）
  *
- * 由 UI_Manager_Tick 每帧统一调用一次，与渲染路径解耦：
- *   - need_commit 短路 / 协议内文本子模式 / 息屏 均不影响时间轴推进
+ * 由 UI_Manager_Tick Step1.6 每帧统一调用一次，与渲染路径解耦：
+ *   - need_commit 短路 / 协议内文本子模式 / 息屏 均不影响采样
  *   - 渲染端（LyricWM_RenderMgr / WindowMgr）读 Get_Current_PlayTime() 即可
+ *
+ * Sync_GetTime() 的语义由算法保证：
+ *   - 未收到任何同步包 → 0（等价于旧的"未同步 → 0"）
+ *   - 暂停 → 权威冻结位置（不再增长）
+ *   - 误差 ≤ SYNC_PHASE_SLEW_MIN_MS → 不动相位；大跳 → 单包硬复位
+ *   - 预测位置永不超过上位机给的 total_ms
  */
-void LyricWM_UpdatePlayTime(void) { _UpdateSmoothTime(); }
+void LyricWM_UpdatePlayTime(void) {
+  s_curr_play_time_ms = Sync_GetTime();
+}
 
 /**
  * @brief 优化版进度计算
@@ -442,7 +353,7 @@ void LyricWM_RenderMgr(void) {
     return;
 
   /* 注：全局播放时间轴已由 UI_Manager_Tick 每帧调用
-   * LyricWM_UpdatePlayTime() 统一推进，本处不再调用 _UpdateSmoothTime。
+   * LyricWM_UpdatePlayTime() 统一采样（Sync_GetTime()），
    * need_commit 短路只影响渲染，不影响时间轴。 */
 
   for (uint16_t i = used_lyric_lines; i < MAX_WINDOWS; i++) {

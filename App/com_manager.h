@@ -9,6 +9,13 @@
 extern uint8_t rx_raw_buffer[RX_BUF_SIZE];
 extern volatile uint8_t cmd_ready;
 
+/* 全链路延迟测试(0x1F/0xAF)时间戳：
+ * g_uart_last_rx_cyccnt = USART1 IDLE 中断里打点的 DWT 周期数（一帧收完的瞬间）；
+ * g_uart_rx_ts_valid    = 打点是否有效（COM_Init / 错误恢复后为 0）。
+ * 消费者：latency_service.c */
+extern volatile uint32_t g_uart_last_rx_cyccnt;
+extern volatile uint8_t g_uart_rx_ts_valid;
+
 void COM_Init(UART_HandleTypeDef *huart);
 void COM_UART_IDLE_Callback(UART_HandleTypeDef *huart);
 
